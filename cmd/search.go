@@ -1,239 +1,264 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 
-	"github.com/spf13/cobra"
+	"github.com/majiayu000/caude-skill-manager/internal/registry"
 	"github.com/majiayu000/caude-skill-manager/pkg/styles"
+	"github.com/spf13/cobra"
 )
 
-// GitHubSearchResult represents GitHub search API response
-type GitHubSearchResult struct {
-	TotalCount int `json:"total_count"`
-	Items      []struct {
-		FullName    string `json:"full_name"`
-		Description string `json:"description"`
-		Stars       int    `json:"stargazers_count"`
-		URL         string `json:"html_url"`
-		UpdatedAt   string `json:"updated_at"`
-	} `json:"items"`
-}
-
-// KnownSkillSource represents a known skills repository
-type KnownSkillSource struct {
-	Name        string
-	Repo        string
-	Description string
-	Skills      []string
-}
-
-// Known skill sources
-var knownSources = []KnownSkillSource{
-	{
-		Name:        "Anthropic Official",
-		Repo:        "anthropics/skills",
-		Description: "Official Claude Code skills from Anthropic",
-		Skills: []string{
-			"docx", "pdf", "pptx", "xlsx",
-			"frontend-design", "canvas-design", "mcp-builder",
-			"webapp-testing", "web-artifacts-builder",
-			"brand-guidelines", "internal-comms",
-			"algorithmic-art", "slack-gif-creator", "theme-factory",
-			"skill-creator", "doc-coauthoring",
-		},
-	},
-	{
-		Name:        "Obra Superpowers",
-		Repo:        "obra/superpowers",
-		Description: "20+ battle-tested skills for Claude Code",
-		Skills:      []string{"superpowers"},
-	},
-}
-
 var searchCmd = &cobra.Command{
-	Use:     "search <keyword>",
+	Use:     "search [keyword]",
 	Aliases: []string{"s", "find"},
-	Short:   "Search for skills on GitHub",
-	Long: `Search for Claude Code skills on GitHub.
+	Short:   "Search for skills in the registry",
+	Long: `Search for Claude Code skills in the registry.
 
-Searches for repositories containing SKILL.md files.`,
+Uses the skill-registry for fast and reliable results.`,
 	Example: `  sk search testing
-  sk search "react component"
+  sk search pdf
+  sk search --category documents
   sk search --popular`,
-	Args: cobra.MinimumNArgs(0),
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		popular, _ := cmd.Flags().GetBool("popular")
-		limit, _ := cmd.Flags().GetInt("limit")
+		category, _ := cmd.Flags().GetString("category")
 
 		fmt.Println()
 
-		// Show popular/known skills
-		if popular || len(args) == 0 {
-			showPopularSkills()
+		// Show popular/featured skills
+		if popular || (len(args) == 0 && category == "") {
+			showFeaturedSkills()
 			return
 		}
 
-		keyword := strings.Join(args, " ")
-
-		fmt.Printf("%s Searching for '%s'...\n\n",
-			styles.SpinnerStyle.Render(styles.IconSearch),
-			styles.CodeStyle.Render(keyword),
-		)
-
-		// First search in known sources
-		localResults := searchKnownSources(keyword)
-		if len(localResults) > 0 {
-			fmt.Printf("%s Found %d matching skill(s) from known sources:\n\n",
-				styles.SuccessStyle.Render(styles.IconCheck),
-				len(localResults),
-			)
-			for i, result := range localResults {
-				fmt.Printf("%s %s\n",
-					styles.SuccessStyle.Render(fmt.Sprintf("%2d.", i+1)),
-					styles.SkillNameStyle.Render(result),
-				)
-				fmt.Printf("    %s sk install %s\n\n",
-					styles.MutedStyle.Render(styles.IconArrow),
-					result,
-				)
-			}
+		// Show by category
+		if category != "" {
+			showByCategory(category)
+			return
 		}
 
-		// Then search GitHub
-		results, err := searchGitHub(keyword, limit)
-		if err != nil {
-			// Don't fail, just show warning
-			fmt.Println(styles.WarningStyle.Render("GitHub search unavailable: " + err.Error()))
-		} else if len(results.Items) > 0 {
-			fmt.Printf("%s Found %d repo(s) on GitHub:\n\n",
-				styles.SuccessStyle.Render(styles.IconCheck),
-				len(results.Items),
-			)
-
-			for i, item := range results.Items {
-				fmt.Printf("%s %s",
-					styles.SuccessStyle.Render(fmt.Sprintf("%2d.", i+1)),
-					styles.SkillNameStyle.Render(item.FullName),
-				)
-				fmt.Printf("  %s %d\n",
-					styles.MutedStyle.Render(styles.IconStar),
-					item.Stars,
-				)
-				if item.Description != "" {
-					desc := item.Description
-					if len(desc) > 70 {
-						desc = desc[:67] + "..."
-					}
-					fmt.Printf("    %s\n", styles.SkillDescStyle.Render(desc))
-				}
-				fmt.Printf("    %s sk install %s\n\n",
-					styles.MutedStyle.Render(styles.IconArrow),
-					item.FullName,
-				)
-			}
-		}
-
-		if len(localResults) == 0 && (err != nil || len(results.Items) == 0) {
-			fmt.Println(styles.MutedStyle.Render("No skills found matching your query."))
-			fmt.Println()
-			fmt.Println(styles.MutedStyle.Render("Try:"))
-			fmt.Println(styles.MutedStyle.Render("  • sk search --popular"))
-			fmt.Println(styles.MutedStyle.Render("  • Browsing SkillsMP: https://skillsmp.com"))
-		}
-
-		fmt.Println()
+		// Search by keyword
+		keyword := args[0]
+		searchRegistry(keyword)
 	},
 }
 
-func showPopularSkills() {
+func showFeaturedSkills() {
 	fmt.Println(styles.TitleStyle.Render(styles.IconStar + " Popular Skills"))
 	fmt.Println()
 
-	for _, source := range knownSources {
-		fmt.Printf("%s %s\n",
-			styles.SkillNameStyle.Render(source.Name),
-			styles.MutedStyle.Render("("+source.Repo+")"),
-		)
-		fmt.Printf("  %s\n\n", styles.SkillDescStyle.Render(source.Description))
+	// Try to fetch from registry
+	reg, err := registry.FetchRegistry()
+	if err != nil {
+		fmt.Println(styles.WarningStyle.Render("Could not fetch registry: " + err.Error()))
+		fmt.Println(styles.MutedStyle.Render("Showing cached data..."))
+		fmt.Println()
+		showFallbackSkills()
+		return
+	}
 
-		for _, skill := range source.Skills {
-			installCmd := source.Repo
-			if skill != source.Repo && !strings.HasSuffix(source.Repo, skill) {
-				installCmd = source.Repo + "/" + skill
+	// Group by source
+	sources := make(map[string][]registry.Skill)
+	for _, skill := range reg.Skills {
+		sources[skill.Source] = append(sources[skill.Source], skill)
+	}
+
+	// Show featured first
+	for source, skills := range sources {
+		fmt.Printf("%s %s\n",
+			styles.SkillNameStyle.Render(source),
+			styles.MutedStyle.Render(fmt.Sprintf("(%d skills)", len(skills))),
+		)
+		fmt.Println()
+
+		for _, skill := range skills {
+			starStr := ""
+			if skill.Stars > 0 {
+				starStr = fmt.Sprintf(" %s%d", styles.IconStar, skill.Stars)
 			}
-			fmt.Printf("    %s %-25s %s\n",
+			featuredStr := ""
+			if skill.Featured {
+				featuredStr = " " + styles.BadgeStyle.Render("featured")
+			}
+
+			fmt.Printf("    %s %-22s%s%s\n",
 				styles.SuccessStyle.Render(styles.IconPackage),
-				skill,
-				styles.MutedStyle.Render("sk install "+installCmd),
+				skill.Name,
+				styles.MutedStyle.Render(starStr),
+				featuredStr,
+			)
+			if skill.Description != "" {
+				desc := skill.Description
+				if len(desc) > 50 {
+					desc = desc[:47] + "..."
+				}
+				fmt.Printf("       %s\n", styles.SkillDescStyle.Render(desc))
+			}
+			fmt.Printf("       %s sk install %s\n\n",
+				styles.MutedStyle.Render(styles.IconArrow),
+				skill.Install,
 			)
 		}
-		fmt.Println()
 	}
 
 	fmt.Println(styles.MutedStyle.Render("─────────────────────────────────────────────────"))
-	fmt.Printf("%s More skills at: %s\n",
+	fmt.Printf("%s Registry: %d skills | Updated: %s\n",
 		styles.MutedStyle.Render(styles.IconInfo),
-		styles.CodeStyle.Render("https://skillsmp.com"),
+		reg.TotalCount,
+		reg.UpdatedAt[:10],
 	)
 	fmt.Println()
 }
 
-func searchKnownSources(keyword string) []string {
-	keyword = strings.ToLower(keyword)
-	var results []string
-
-	for _, source := range knownSources {
-		for _, skill := range source.Skills {
-			if strings.Contains(strings.ToLower(skill), keyword) {
-				results = append(results, source.Repo+"/"+skill)
-			}
-		}
+func showFallbackSkills() {
+	// Hardcoded fallback when registry is unavailable
+	skills := []struct {
+		name, install, desc string
+	}{
+		{"docx", "anthropics/skills/docx", "Document creation and editing"},
+		{"pdf", "anthropics/skills/pdf", "PDF document manipulation"},
+		{"pptx", "anthropics/skills/pptx", "PowerPoint presentations"},
+		{"superpowers", "obra/superpowers", "20+ battle-tested skills"},
 	}
 
-	return results
+	for _, s := range skills {
+		fmt.Printf("    %s %-22s\n",
+			styles.SuccessStyle.Render(styles.IconPackage),
+			s.name,
+		)
+		fmt.Printf("       %s\n", styles.SkillDescStyle.Render(s.desc))
+		fmt.Printf("       %s sk install %s\n\n",
+			styles.MutedStyle.Render(styles.IconArrow),
+			s.install,
+		)
+	}
 }
 
-func searchGitHub(keyword string, limit int) (*GitHubSearchResult, error) {
-	// Search for repos with SKILL.md file or claude-skill topic
-	query := fmt.Sprintf("%s SKILL.md OR topic:claude-skill OR topic:claude-code-skill", keyword)
-	searchURL := fmt.Sprintf(
-		"https://api.github.com/search/repositories?q=%s&sort=stars&order=desc&per_page=%d",
-		url.QueryEscape(query),
-		limit,
+func showByCategory(category string) {
+	fmt.Printf("%s Category: %s\n\n",
+		styles.TitleStyle.Render(styles.IconFolder),
+		styles.CodeStyle.Render(category),
 	)
 
-	req, err := http.NewRequest("GET", searchURL, nil)
+	skills, err := registry.GetByCategory(category)
 	if err != nil {
-		return nil, err
+		fmt.Println(styles.RenderError("Failed to fetch category: " + err.Error()))
+		return
 	}
 
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "sk-claude-skills-cli")
+	if len(skills) == 0 {
+		fmt.Println(styles.MutedStyle.Render("No skills found in this category."))
+		fmt.Println()
+		fmt.Println(styles.MutedStyle.Render("Available categories: documents, development, design, testing, productivity, data"))
+		return
+	}
 
-	resp, err := http.DefaultClient.Do(req)
+	for _, skill := range skills {
+		fmt.Printf("  %s %s\n",
+			styles.SuccessStyle.Render(styles.IconPackage),
+			styles.SkillNameStyle.Render(skill.Name),
+		)
+		if skill.Description != "" {
+			desc := skill.Description
+			if len(desc) > 60 {
+				desc = desc[:57] + "..."
+			}
+			fmt.Printf("     %s\n", styles.SkillDescStyle.Render(desc))
+		}
+		fmt.Printf("     %s sk install %s\n\n",
+			styles.MutedStyle.Render(styles.IconArrow),
+			skill.Install,
+		)
+	}
+
+	fmt.Printf("\n%s Found %d skill(s) in '%s'\n\n",
+		styles.MutedStyle.Render(styles.IconInfo),
+		len(skills),
+		category,
+	)
+}
+
+func searchRegistry(keyword string) {
+	fmt.Printf("%s Searching for '%s'...\n\n",
+		styles.SpinnerStyle.Render(styles.IconSearch),
+		styles.CodeStyle.Render(keyword),
+	)
+
+	skills, err := registry.Search(keyword)
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+		fmt.Println(styles.RenderError("Search failed: " + err.Error()))
+		return
 	}
 
-	var result GitHubSearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	if len(skills) == 0 {
+		fmt.Println(styles.MutedStyle.Render("No skills found matching your query."))
+		fmt.Println()
+		fmt.Println(styles.MutedStyle.Render("Try:"))
+		fmt.Println(styles.MutedStyle.Render("  • sk search --popular"))
+		fmt.Println(styles.MutedStyle.Render("  • sk search --category documents"))
+		fmt.Println(styles.MutedStyle.Render("  • Browse: https://skillsmp.com"))
+		fmt.Println()
+		return
 	}
 
-	return &result, nil
+	fmt.Printf("%s Found %d skill(s):\n\n",
+		styles.SuccessStyle.Render(styles.IconCheck),
+		len(skills),
+	)
+
+	for i, skill := range skills {
+		// Highlight matched keyword
+		name := skill.Name
+		desc := skill.Description
+
+		fmt.Printf("%s %s",
+			styles.SuccessStyle.Render(fmt.Sprintf("%2d.", i+1)),
+			styles.SkillNameStyle.Render(name),
+		)
+
+		if skill.Stars > 0 {
+			fmt.Printf("  %s %d",
+				styles.MutedStyle.Render(styles.IconStar),
+				skill.Stars,
+			)
+		}
+
+		if skill.Featured {
+			fmt.Printf(" %s", styles.BadgeStyle.Render("featured"))
+		}
+
+		fmt.Println()
+
+		if desc != "" {
+			if len(desc) > 70 {
+				desc = desc[:67] + "..."
+			}
+			fmt.Printf("    %s\n", styles.SkillDescStyle.Render(desc))
+		}
+
+		// Tags
+		if len(skill.Tags) > 0 {
+			tags := strings.Join(skill.Tags, ", ")
+			if len(tags) > 50 {
+				tags = tags[:47] + "..."
+			}
+			fmt.Printf("    %s %s\n",
+				styles.MutedStyle.Render("tags:"),
+				styles.MutedStyle.Render(tags),
+			)
+		}
+
+		fmt.Printf("    %s sk install %s\n\n",
+			styles.MutedStyle.Render(styles.IconArrow),
+			skill.Install,
+		)
+	}
 }
 
 func init() {
-	searchCmd.Flags().IntP("limit", "l", 10, "Maximum number of results")
-	searchCmd.Flags().BoolP("popular", "p", false, "Show popular skills")
+	searchCmd.Flags().BoolP("popular", "p", false, "Show popular/featured skills")
+	searchCmd.Flags().StringP("category", "c", "", "Filter by category (documents, development, design, testing)")
 	rootCmd.AddCommand(searchCmd)
 }
