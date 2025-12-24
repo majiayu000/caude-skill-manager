@@ -1,0 +1,100 @@
+version: 2
+
+project_name: sk
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sk
+    main: ./main.go
+    binary: sk
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "386" }}386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: majiayu000
+    name: caude-skill-manager
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## sk {{ .Tag }}
+
+    Claude Skills Manager - npm for Claude Code Skills
+
+  footer: |
+    ## Installation
+
+    ```bash
+    # Using Go
+    go install github.com/majiayu000/caude-skill-manager@{{ .Tag }}
+
+    # Or download binary
+    curl -L https://github.com/majiayu000/caude-skill-manager/releases/download/{{ .Tag }}/sk_darwin_arm64.tar.gz | tar xz
+    sudo mv sk /usr/local/bin/
+    ```
+
+    **Full Changelog**: https://github.com/majiayu000/caude-skill-manager/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: sk
+    repository:
+      owner: majiayu000
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    folder: Formula
+    homepage: "https://github.com/majiayu000/caude-skill-manager"
+    description: "Claude Skills Manager - npm for Claude Code Skills"
+    license: "MIT"
+    skip_upload: auto
+    test: |
+      system "#{bin}/sk", "--help"
+    install: |
+      bin.install "sk"
