@@ -10,7 +10,7 @@ import (
 
 const (
 	// RegistryURL is the base URL for the skill registry
-	RegistryURL = "https://raw.githubusercontent.com/majiayu000/skill-registry/main"
+	RegistryURL = "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
 )
 
 // Registry represents the skill registry
