@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -108,29 +107,4 @@ func RunWithSpinner(message string, fn func() (string, error)) error {
 
 	_, err := p.Run()
 	return err
-}
-
-// SimpleSpinner shows a simple animated spinner for non-interactive use
-func SimpleSpinner(message string, fn func() error) error {
-	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	done := make(chan error)
-
-	go func() {
-		done <- fn()
-	}()
-
-	i := 0
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case err := <-done:
-			fmt.Print("\r\033[K") // Clear line
-			return err
-		case <-ticker.C:
-			fmt.Printf("\r  %s %s", styles.SpinnerStyle.Render(frames[i%len(frames)]), message)
-			i++
-		}
-	}
 }

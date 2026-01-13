@@ -43,15 +43,6 @@ type Category struct {
 	Skills    []Skill `json:"skills"`
 }
 
-// CategoriesIndex represents the categories index
-type CategoriesIndex struct {
-	UpdatedAt  string `json:"updated_at"`
-	Categories []struct {
-		Name  string `json:"name"`
-		Count int    `json:"count"`
-	} `json:"categories"`
-}
-
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
@@ -133,23 +124,6 @@ func Search(keyword string) ([]Skill, error) {
 	}
 
 	return results, nil
-}
-
-// GetFeatured returns featured skills
-func GetFeatured() ([]Skill, error) {
-	registry, err := FetchRegistry()
-	if err != nil {
-		return nil, err
-	}
-
-	var featured []Skill
-	for _, skill := range registry.Skills {
-		if skill.Featured {
-			featured = append(featured, skill)
-		}
-	}
-
-	return featured, nil
 }
 
 // GetByCategory returns skills in a category
