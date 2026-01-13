@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/majiayu000/caude-skill-manager/internal/github"
 	"github.com/majiayu000/caude-skill-manager/internal/skill"
 	"github.com/majiayu000/caude-skill-manager/internal/ui"
 	"github.com/majiayu000/caude-skill-manager/pkg/styles"
+	"github.com/spf13/cobra"
 )
 
 var (
-	installName string // custom name for the skill
-	installForce bool  // force reinstall
+	installName  string // custom name for the skill
+	installForce bool   // force reinstall
 )
 
 var installCmd = &cobra.Command{
@@ -56,7 +56,10 @@ Supported formats:
 
 		// Remove existing if force
 		if installForce && skill.Exists(skillName) {
-			skill.Remove(skillName)
+			if err := skill.Remove(skillName); err != nil {
+				fmt.Println(styles.RenderError("Failed to remove existing skill: " + err.Error()))
+				os.Exit(1)
+			}
 		}
 
 		fmt.Println()

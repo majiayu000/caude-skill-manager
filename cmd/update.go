@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/majiayu000/caude-skill-manager/internal/skill"
 	"github.com/majiayu000/caude-skill-manager/pkg/styles"
+	"github.com/spf13/cobra"
 )
 
 var updateCmd = &cobra.Command{
@@ -29,25 +29,40 @@ If no skill name is provided, all skills will be updated.`,
 			return
 		}
 
-		fmt.Println()
-		fmt.Println(styles.TitleStyle.Render(styles.IconSync + " Checking for updates..."))
-		fmt.Println()
+		target := ""
+		if len(args) > 0 {
+			target = args[0]
+		}
 
-		// TODO: Implement actual update logic
-		// For now, just show the installed skills
-		for _, s := range skills {
-			if len(args) > 0 && s.Name != args[0] {
-				continue
+		if target != "" {
+			found := false
+			for _, s := range skills {
+				if s.Name == target {
+					found = true
+					break
+				}
 			}
-			fmt.Printf("  %s %s %s\n",
-				styles.SuccessStyle.Render(styles.IconCheck),
-				s.Name,
-				styles.MutedStyle.Render("(already up to date)"),
-			)
+			if !found {
+				fmt.Println(styles.RenderError(fmt.Sprintf("Skill '%s' is not installed.", target)))
+				return
+			}
 		}
 
 		fmt.Println()
-		fmt.Println(styles.MutedStyle.Render("  Update functionality coming soon!"))
+		fmt.Println(styles.TitleStyle.Render(styles.IconSync + " Update not implemented"))
+		fmt.Println()
+		if target != "" {
+			fmt.Printf("  %s %s\n",
+				styles.MutedStyle.Render(styles.IconArrow),
+				styles.MutedStyle.Render("Updates for a single skill are not supported yet."),
+			)
+		} else {
+			fmt.Printf("  %s %s\n",
+				styles.MutedStyle.Render(styles.IconArrow),
+				styles.MutedStyle.Render("Bulk updates are not supported yet."),
+			)
+		}
+		fmt.Println()
 		fmt.Println(styles.MutedStyle.Render("  For now, use: sk uninstall <name> && sk install <source>"))
 		fmt.Println()
 	},

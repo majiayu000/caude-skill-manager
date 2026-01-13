@@ -53,7 +53,7 @@ func showFeaturedSkills() {
 	reg, err := registry.FetchRegistry()
 	if err != nil {
 		fmt.Println(styles.WarningStyle.Render("Could not fetch registry: " + err.Error()))
-		fmt.Println(styles.MutedStyle.Render("Showing cached data..."))
+		fmt.Println(styles.MutedStyle.Render("Showing fallback list..."))
 		fmt.Println()
 		showFallbackSkills()
 		return
