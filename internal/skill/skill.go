@@ -99,15 +99,20 @@ func Exists(name string) bool {
 
 // Remove uninstalls a skill
 func Remove(name string) error {
-	skillsDir := config.GetSkillsDir()
-	skillPath := filepath.Join(skillsDir, name)
-
-	// Check if exists
-	if _, err := os.Stat(skillPath); os.IsNotExist(err) {
+	s, err := Get(name)
+	if err != nil {
+		return err
+	}
+	if s == nil {
 		return os.ErrNotExist
 	}
 
-	return os.RemoveAll(skillPath)
+	// Check if exists
+	if _, err := os.Stat(s.Path); os.IsNotExist(err) {
+		return os.ErrNotExist
+	}
+
+	return os.RemoveAll(s.Path)
 }
 
 // parseSkillMd extracts metadata from SKILL.md front matter

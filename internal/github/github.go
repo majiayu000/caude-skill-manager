@@ -203,6 +203,9 @@ func extractZip(zipPath, targetDir string, info *RepoInfo) error {
 		}
 
 		targetPath := filepath.Join(targetDir, relPath)
+		if !isWithinDir(targetDir, targetPath) {
+			return fmt.Errorf("zip entry escapes target dir: %s", relPath)
+		}
 
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(targetPath, f.Mode())
@@ -247,6 +250,16 @@ func extractZip(zipPath, targetDir string, info *RepoInfo) error {
 	}
 
 	return nil
+}
+
+func isWithinDir(root, target string) bool {
+	root = filepath.Clean(root)
+	target = filepath.Clean(target)
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // GetSkillName determines the skill name from RepoInfo

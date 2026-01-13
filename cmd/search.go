@@ -104,10 +104,14 @@ func showFeaturedSkills() {
 	}
 
 	fmt.Println(styles.MutedStyle.Render("─────────────────────────────────────────────────"))
+	updatedAt := reg.UpdatedAt
+	if len(updatedAt) >= 10 {
+		updatedAt = updatedAt[:10]
+	}
 	fmt.Printf("%s Registry: %d skills | Updated: %s\n",
 		styles.MutedStyle.Render(styles.IconInfo),
 		reg.TotalCount,
-		reg.UpdatedAt[:10],
+		updatedAt,
 	)
 	fmt.Println()
 }
