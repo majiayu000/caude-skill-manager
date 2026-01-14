@@ -15,6 +15,7 @@ import (
 const (
 	// DefaultRegistryURL is the base URL for the skill registry
 	DefaultRegistryURL = "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
+	registryCacheTTL   = 24 * time.Hour
 )
 
 // Registry represents the skill registry
@@ -234,6 +235,14 @@ func ResolveInstall(name string) (string, RegistrySource, error) {
 
 func loadRegistryCache() (*Registry, error) {
 	path := config.RegistryCachePath()
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if time.Since(info.ModTime()) > registryCacheTTL {
+		return nil, fmt.Errorf("registry cache expired")
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

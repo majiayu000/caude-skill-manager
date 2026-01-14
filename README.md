@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/majiayu000/caude-skill-manager/releases"><img src="https://img.shields.io/github/v/release/majiayu000/caude-skill-manager?style=flat-square" alt="Release"></a>
-  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go" alt="Go">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome">
 </p>
@@ -20,7 +20,7 @@
 ## Why sk?
 
 - 🚀 **One-command install** — `sk install user/repo`
-- 🔄 **Batch update** — `sk update` to update all skills
+- 🔄 **Batch update** — `sk update` (coming soon)
 - 🔍 **Smart search** — `sk search testing`
 - 🩺 **Health check** — `sk doctor` to find issues
 - 🎨 **Beautiful TUI** — Built with [Charm](https://charm.sh)
@@ -54,6 +54,9 @@ sudo mv sk /usr/local/bin/
 sk install anthropics/skills/docx
 sk install obra/superpowers
 sk install https://github.com/user/repo
+
+# Install a skill by registry name
+sk install docx
 
 # List installed skills
 sk list
@@ -120,6 +123,9 @@ Anthropic Official (anthropics/skills)
 ## Supported Sources
 
 ```bash
+# From registry by name
+sk install docx
+
 # Short format
 sk install owner/repo              # Entire repo
 sk install owner/repo/path         # Subdirectory (monorepo)
@@ -152,9 +158,13 @@ Config file: `~/.skrc`
 ```json
 {
   "skills_dir": "~/.claude/skills",
-  "registry": "github"
+  "registry": "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
 }
 ```
+
+Registry cache:
+- Location: `~/.cache/sk/registry.json`
+- TTL: 24 hours (cache is ignored after expiry)
 
 ## Built With
 
