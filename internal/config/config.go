@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -42,7 +43,10 @@ func Load() *Config {
 		return cfg
 	}
 
-	json.Unmarshal(data, cfg)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "Warning: failed to parse config file, using defaults:", err)
+		return cfg
+	}
 	return cfg
 }
 

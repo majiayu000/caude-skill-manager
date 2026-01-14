@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +20,7 @@ type RepoInfo struct {
 	Repo     string
 	Path     string // subdirectory path (for monorepo skills)
 	Branch   string
+	TreeRef  string
 	FullURL  string
 	CloneURL string
 }
@@ -38,14 +40,43 @@ func ParseGitHubURL(input string) (*RepoInfo, error) {
 
 	// Full GitHub URL
 	if strings.HasPrefix(input, "https://github.com/") {
-		// Pattern: https://github.com/owner/repo/tree/branch/path
-		treePattern := regexp.MustCompile(`https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.+))?`)
-		if matches := treePattern.FindStringSubmatch(input); len(matches) >= 4 {
-			info.Owner = matches[1]
-			info.Repo = matches[2]
-			info.Branch = matches[3]
-			if len(matches) > 4 {
-				info.Path = matches[4]
+		raw := input
+		if idx := strings.IndexAny(raw, "?#"); idx != -1 {
+			raw = raw[:idx]
+		}
+
+		if strings.Contains(raw, "/tree/") {
+			u, err := url.Parse(raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid GitHub URL format: %s", input)
+			}
+
+			parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+			if len(parts) < 4 || parts[2] != "tree" {
+				return nil, fmt.Errorf("invalid GitHub URL format: %s", input)
+			}
+
+			info.Owner = parts[0]
+			info.Repo = parts[1]
+
+			treeParts := parts[3:]
+			if len(treeParts) == 0 {
+				return nil, fmt.Errorf("invalid GitHub URL format: %s", input)
+			}
+
+			info.TreeRef = strings.Join(treeParts, "/")
+			if strings.Contains(info.TreeRef, "%2F") || strings.Contains(info.TreeRef, "%2f") {
+				decoded, err := url.PathUnescape(info.TreeRef)
+				if err != nil {
+					return nil, fmt.Errorf("invalid GitHub URL format: %s", input)
+				}
+				info.Branch = decoded
+				info.Path = ""
+			} else {
+				info.Branch = treeParts[0]
+				if len(treeParts) > 1 {
+					info.Path = strings.Join(treeParts[1:], "/")
+				}
 			}
 		} else {
 			// Pattern: https://github.com/owner/repo
@@ -93,9 +124,9 @@ func DownloadAndExtract(info *RepoInfo, targetName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		// Try 'master' branch if 'main' fails
 		if info.Branch == "main" {
 			info.Branch = "master"
@@ -105,11 +136,12 @@ func DownloadAndExtract(info *RepoInfo, targetName string) error {
 			if err != nil {
 				return fmt.Errorf("failed to download: %w", err)
 			}
-			defer resp.Body.Close()
 		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("download failed with status: %s", resp.Status)
-		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status: %s", resp.Status)
 	}
 
 	// Create temp file for zip
@@ -148,6 +180,10 @@ func DownloadAndExtract(info *RepoInfo, targetName string) error {
 	}
 
 	if err != nil {
+		if info.TreeRef != "" && strings.Contains(info.TreeRef, "/") &&
+			!strings.Contains(info.TreeRef, "%2F") && !strings.Contains(info.TreeRef, "%2f") {
+			return fmt.Errorf("failed to extract: %w (if your branch contains '/', URL-encode it, e.g. feature%%2Ffoo)", err)
+		}
 		return fmt.Errorf("failed to extract: %w", err)
 	}
 
