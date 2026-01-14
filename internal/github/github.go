@@ -16,13 +16,14 @@ import (
 
 // RepoInfo contains parsed GitHub repository information
 type RepoInfo struct {
-	Owner    string
-	Repo     string
-	Path     string // subdirectory path (for monorepo skills)
-	Branch   string
-	TreeRef  string
-	FullURL  string
-	CloneURL string
+	Owner            string
+	Repo             string
+	Path             string // subdirectory path (for monorepo skills)
+	Branch           string
+	TreeRef          string
+	TreeRefAmbiguous bool
+	FullURL          string
+	CloneURL         string
 }
 
 // ParseGitHubURL parses various GitHub URL formats
@@ -76,6 +77,7 @@ func ParseGitHubURL(input string) (*RepoInfo, error) {
 				info.Branch = treeParts[0]
 				if len(treeParts) > 1 {
 					info.Path = strings.Join(treeParts[1:], "/")
+					info.TreeRefAmbiguous = true
 				}
 			}
 		} else {
@@ -180,11 +182,73 @@ func DownloadAndExtract(info *RepoInfo, targetName string) error {
 	}
 
 	if err != nil {
-		if info.TreeRef != "" && strings.Contains(info.TreeRef, "/") &&
-			!strings.Contains(info.TreeRef, "%2F") && !strings.Contains(info.TreeRef, "%2f") {
+		if info.TreeRef != "" && info.TreeRefAmbiguous {
+			if resolveErr := tryResolveAmbiguousTreeRef(info, targetName); resolveErr == nil {
+				return nil
+			}
 			return fmt.Errorf("failed to extract: %w (if your branch contains '/', URL-encode it, e.g. feature%%2Ffoo)", err)
 		}
 		return fmt.Errorf("failed to extract: %w", err)
+	}
+
+	return nil
+}
+
+func tryResolveAmbiguousTreeRef(info *RepoInfo, targetName string) error {
+	parts := strings.Split(info.TreeRef, "/")
+	if len(parts) < 2 {
+		return fmt.Errorf("ambiguous tree ref has insufficient parts")
+	}
+
+	// Try longer branch candidates first.
+	for i := len(parts); i >= 1; i-- {
+		branch := strings.Join(parts[:i], "/")
+		path := ""
+		if i < len(parts) {
+			path = strings.Join(parts[i:], "/")
+		}
+
+		infoCopy := *info
+		infoCopy.Branch = branch
+		infoCopy.Path = path
+
+		if err := downloadAndExtractWithBranch(&infoCopy, targetName); err == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("unable to resolve tree ref")
+}
+
+func downloadAndExtractWithBranch(info *RepoInfo, targetName string) error {
+	zipURL := fmt.Sprintf("https://github.com/%s/%s/archive/refs/heads/%s.zip",
+		info.Owner, info.Repo, info.Branch)
+
+	resp, err := http.Get(zipURL)
+	if err != nil {
+		return fmt.Errorf("failed to download: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return fmt.Errorf("download failed with status: %s", resp.Status)
+	}
+	defer resp.Body.Close()
+
+	tmpFile, err := os.CreateTemp("", "sk-*.zip")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		return fmt.Errorf("failed to save zip: %w", err)
+	}
+	tmpFile.Close()
+
+	targetDir := filepath.Join(config.GetSkillsDir(), targetName)
+	if err := extractZip(tmpFile.Name(), targetDir, info); err != nil {
+		return err
 	}
 
 	return nil
