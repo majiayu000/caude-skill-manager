@@ -4,13 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/majiayu000/caude-skill-manager/internal/config"
 )
 
 const (
-	// RegistryURL is the base URL for the skill registry
-	RegistryURL = "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
+	// DefaultRegistryURL is the base URL for the skill registry
+	DefaultRegistryURL = "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
 )
 
 // Registry represents the skill registry
@@ -20,6 +24,14 @@ type Registry struct {
 	TotalCount int     `json:"total_count"`
 	Skills     []Skill `json:"skills"`
 }
+
+// RegistrySource indicates where registry data came from.
+type RegistrySource string
+
+const (
+	RegistrySourceRemote RegistrySource = "remote"
+	RegistrySourceCache  RegistrySource = "cache"
+)
 
 // Skill represents a skill in the registry
 type Skill struct {
@@ -47,31 +59,55 @@ var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
+func registryBaseURL() string {
+	base := config.GetRegistryBaseURL()
+	if base == "" || base == "github" {
+		return DefaultRegistryURL
+	}
+	return strings.TrimRight(base, "/")
+}
+
 // FetchRegistry fetches the full registry
 func FetchRegistry() (*Registry, error) {
-	url := RegistryURL + "/registry.json"
+	registry, _, err := FetchRegistryWithSource()
+	return registry, err
+}
+
+// FetchRegistryWithSource fetches the full registry and indicates data source.
+func FetchRegistryWithSource() (*Registry, RegistrySource, error) {
+	url := registryBaseURL() + "/registry.json"
 
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch registry: %w", err)
+		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
+			return cached, RegistrySourceCache, nil
+		}
+		return nil, "", fmt.Errorf("failed to fetch registry: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
+		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
+			return cached, RegistrySourceCache, nil
+		}
+		return nil, "", fmt.Errorf("registry returned status %d", resp.StatusCode)
 	}
 
 	var registry Registry
 	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
-		return nil, fmt.Errorf("failed to parse registry: %w", err)
+		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
+			return cached, RegistrySourceCache, nil
+		}
+		return nil, "", fmt.Errorf("failed to parse registry: %w", err)
 	}
 
-	return &registry, nil
+	_ = saveRegistryCache(&registry)
+	return &registry, RegistrySourceRemote, nil
 }
 
 // FetchCategory fetches skills for a specific category
 func FetchCategory(category string) (*Category, error) {
-	url := fmt.Sprintf("%s/categories/%s.json", RegistryURL, category)
+	url := fmt.Sprintf("%s/categories/%s.json", registryBaseURL(), category)
 
 	resp, err := httpClient.Get(url)
 	if err != nil {
@@ -126,6 +162,38 @@ func Search(keyword string) ([]Skill, error) {
 	return results, nil
 }
 
+// SearchWithSource searches for skills and returns the data source.
+func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
+	registry, source, err := FetchRegistryWithSource()
+	if err != nil {
+		return nil, "", err
+	}
+
+	keyword = strings.ToLower(keyword)
+	var results []Skill
+
+	for _, skill := range registry.Skills {
+		if strings.Contains(strings.ToLower(skill.Name), keyword) {
+			results = append(results, skill)
+			continue
+		}
+
+		if strings.Contains(strings.ToLower(skill.Description), keyword) {
+			results = append(results, skill)
+			continue
+		}
+
+		for _, tag := range skill.Tags {
+			if strings.Contains(strings.ToLower(tag), keyword) {
+				results = append(results, skill)
+				break
+			}
+		}
+	}
+
+	return results, source, nil
+}
+
 // GetByCategory returns skills in a category
 func GetByCategory(category string) ([]Skill, error) {
 	cat, err := FetchCategory(category)
@@ -146,4 +214,49 @@ func GetByCategory(category string) ([]Skill, error) {
 	}
 
 	return cat.Skills, nil
+}
+
+// ResolveInstall finds a skill by name and returns its install string.
+func ResolveInstall(name string) (string, RegistrySource, error) {
+	registry, source, err := FetchRegistryWithSource()
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, skill := range registry.Skills {
+		if strings.EqualFold(skill.Name, name) {
+			return skill.Install, source, nil
+		}
+	}
+
+	return "", source, fmt.Errorf("no skill named %q in registry", name)
+}
+
+func loadRegistryCache() (*Registry, error) {
+	path := config.RegistryCachePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var registry Registry
+	if err := json.Unmarshal(data, &registry); err != nil {
+		return nil, err
+	}
+
+	return &registry, nil
+}
+
+func saveRegistryCache(registry *Registry) error {
+	path := config.RegistryCachePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
 }

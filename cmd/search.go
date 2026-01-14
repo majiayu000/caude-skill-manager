@@ -50,13 +50,17 @@ func showFeaturedSkills() {
 	fmt.Println()
 
 	// Try to fetch from registry
-	reg, err := registry.FetchRegistry()
+	reg, source, err := registry.FetchRegistryWithSource()
 	if err != nil {
 		fmt.Println(styles.WarningStyle.Render("Could not fetch registry: " + err.Error()))
 		fmt.Println(styles.MutedStyle.Render("Showing fallback list..."))
 		fmt.Println()
 		showFallbackSkills()
 		return
+	}
+	if source == registry.RegistrySourceCache {
+		fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
+		fmt.Println()
 	}
 
 	// Group by source
@@ -190,10 +194,14 @@ func searchRegistry(keyword string) {
 		styles.CodeStyle.Render(keyword),
 	)
 
-	skills, err := registry.Search(keyword)
+	skills, source, err := registry.SearchWithSource(keyword)
 	if err != nil {
 		fmt.Println(styles.RenderError("Search failed: " + err.Error()))
 		return
+	}
+	if source == registry.RegistrySourceCache {
+		fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
+		fmt.Println()
 	}
 
 	if len(skills) == 0 {

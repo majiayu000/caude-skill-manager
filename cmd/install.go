@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/majiayu000/caude-skill-manager/internal/github"
+	"github.com/majiayu000/caude-skill-manager/internal/registry"
 	"github.com/majiayu000/caude-skill-manager/internal/skill"
 	"github.com/majiayu000/caude-skill-manager/internal/ui"
 	"github.com/majiayu000/caude-skill-manager/pkg/styles"
@@ -23,22 +24,37 @@ var installCmd = &cobra.Command{
 	Long: `Install a Claude Code skill from GitHub.
 
 Supported formats:
+  <skill-name>                  Install from registry by name
   owner/repo                     Install entire repo
   owner/repo/path/to/skill       Install skill from subdirectory
   https://github.com/owner/repo  Full GitHub URL
 `,
 	Example: `  sk install anthropics/skills/docx
+  sk install docx
   sk install obra/superpowers
   sk install https://github.com/user/repo`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		source := args[0]
 
-		// Parse GitHub URL
+		// Parse GitHub URL or resolve from registry by name
 		info, err := github.ParseGitHubURL(source)
 		if err != nil {
-			fmt.Println(styles.RenderError(err.Error()))
-			os.Exit(1)
+			install, regSource, regErr := registry.ResolveInstall(source)
+			if regErr != nil {
+				fmt.Println(styles.RenderError(err.Error()))
+				fmt.Println(styles.MutedStyle.Render("Also tried registry lookup: " + regErr.Error()))
+				os.Exit(1)
+			}
+			source = install
+			info, err = github.ParseGitHubURL(source)
+			if err != nil {
+				fmt.Println(styles.RenderError(err.Error()))
+				os.Exit(1)
+			}
+			if regSource == registry.RegistrySourceCache {
+				fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
+			}
 		}
 
 		// Determine skill name

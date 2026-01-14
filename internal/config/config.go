@@ -28,10 +28,30 @@ func GetSkillsDir() string {
 	return cfg.SkillsDir
 }
 
+// GetRegistryBaseURL returns the registry base URL.
+// If config uses legacy "github", return default registry URL.
+func GetRegistryBaseURL() string {
+	cfg := Load()
+	if cfg.Registry == "" || cfg.Registry == "github" {
+		return "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
+	}
+	return cfg.Registry
+}
+
 // ConfigPath returns the path to config file
 func ConfigPath() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".skrc")
+}
+
+// RegistryCachePath returns the registry cache file path.
+func RegistryCachePath() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil || cacheDir == "" {
+		homeDir, _ := os.UserHomeDir()
+		cacheDir = filepath.Join(homeDir, ".cache")
+	}
+	return filepath.Join(cacheDir, "sk", "registry.json")
 }
 
 // Load loads configuration from file
