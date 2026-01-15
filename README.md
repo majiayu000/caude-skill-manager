@@ -158,13 +158,14 @@ Config file: `~/.skrc`
 ```json
 {
   "skills_dir": "~/.claude/skills",
-  "registry": "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main"
+  "registry": "https://raw.githubusercontent.com/majiayu000/claude-skill-registry/main",
+  "registry_ttl_hours": 24
 }
 ```
 
 Registry cache:
 - Location: `~/.cache/sk/registry.json`
-- TTL: 24 hours (cache is ignored after expiry)
+- TTL: `registry_ttl_hours` (cache is ignored after expiry)
 
 ## Built With
 

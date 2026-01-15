@@ -9,16 +9,18 @@ import (
 
 // Config represents the global configuration
 type Config struct {
-	SkillsDir string `json:"skills_dir"`
-	Registry  string `json:"registry"`
+	SkillsDir        string `json:"skills_dir"`
+	Registry         string `json:"registry"`
+	RegistryTTLHours int    `json:"registry_ttl_hours"`
 }
 
 // DefaultConfig returns default configuration
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
-		SkillsDir: filepath.Join(homeDir, ".claude", "skills"),
-		Registry:  "github",
+		SkillsDir:        filepath.Join(homeDir, ".claude", "skills"),
+		Registry:         "github",
+		RegistryTTLHours: 24,
 	}
 }
 
@@ -26,6 +28,15 @@ func DefaultConfig() *Config {
 func GetSkillsDir() string {
 	cfg := Load()
 	return cfg.SkillsDir
+}
+
+// GetRegistryTTL returns registry cache TTL in hours.
+func GetRegistryTTL() int {
+	cfg := Load()
+	if cfg.RegistryTTLHours <= 0 {
+		return DefaultConfig().RegistryTTLHours
+	}
+	return cfg.RegistryTTLHours
 }
 
 // GetRegistryBaseURL returns the registry base URL.
