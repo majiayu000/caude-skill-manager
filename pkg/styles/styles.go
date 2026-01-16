@@ -1,6 +1,11 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Colors - Modern, vibrant color palette
 var (
@@ -130,8 +135,8 @@ var (
 			Italic(true)
 )
 
-// Icons
-const (
+// Icons (default to Unicode, can downgrade to ASCII)
+var (
 	IconCheck    = "✓"
 	IconCross    = "✗"
 	IconArrow    = "→"
@@ -152,6 +157,40 @@ const (
 	IconInfo     = "ℹ"
 	IconGear     = "⚙"
 )
+
+func init() {
+	if !supportsUTF8() {
+		IconCheck = "[ok]"
+		IconCross = "[x]"
+		IconArrow = "->"
+		IconBullet = "*"
+		IconStar = "*"
+		IconBox = "#"
+		IconCircle = "o"
+		IconDiamond = "<>"
+		IconSparkle = "*"
+		IconPackage = "[pkg]"
+		IconFolder = "[dir]"
+		IconFile = "[file]"
+		IconSearch = "[search]"
+		IconDownload = "[dl]"
+		IconUpload = "[up]"
+		IconSync = "[sync]"
+		IconWarning = "[!]"
+		IconInfo = "[i]"
+		IconGear = "[cfg]"
+	}
+}
+
+func supportsUTF8() bool {
+	envs := []string{"LC_ALL", "LC_CTYPE", "LANG"}
+	for _, key := range envs {
+		if v := os.Getenv(key); strings.Contains(strings.ToUpper(v), "UTF-8") || strings.Contains(strings.ToUpper(v), "UTF8") {
+			return true
+		}
+	}
+	return false
+}
 
 // Helper functions
 func RenderSuccess(msg string) string {
