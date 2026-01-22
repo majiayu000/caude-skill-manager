@@ -40,11 +40,27 @@ type Skill struct {
 	Install     string   `json:"install"`
 	Repo        string   `json:"repo"`
 	Path        string   `json:"path"`
+	Branch      string   `json:"branch"`
 	Category    string   `json:"category"`
 	Tags        []string `json:"tags"`
 	Source      string   `json:"source"`
 	Stars       int      `json:"stars"`
 	Featured    bool     `json:"featured"`
+}
+
+// GitHubURL returns the GitHub URL for viewing this skill's SKILL.md
+func (s *Skill) GitHubURL() string {
+	if s.Repo == "" {
+		return ""
+	}
+	branch := s.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	if s.Path != "" {
+		return fmt.Sprintf("https://github.com/%s/blob/%s/%s/SKILL.md", s.Repo, branch, s.Path)
+	}
+	return fmt.Sprintf("https://github.com/%s/blob/%s/SKILL.md", s.Repo, branch)
 }
 
 // Category represents a category index
