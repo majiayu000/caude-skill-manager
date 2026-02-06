@@ -46,75 +46,50 @@ Uses the skill-registry for fast and reliable results.`,
 }
 
 func showFeaturedSkills() {
-	fmt.Println(styles.TitleStyle.Render(styles.IconStar + " Popular Skills"))
+	fmt.Println(styles.TitleStyle.Render(styles.IconStar + " Popular Skills (Top 100)"))
 	fmt.Println()
 
-	// Try to fetch from registry
-	reg, source, err := registry.FetchRegistryWithSource()
+	featured, err := registry.FetchFeatured()
 	if err != nil {
-		fmt.Println(styles.WarningStyle.Render("Could not fetch registry: " + err.Error()))
+		fmt.Println(styles.WarningStyle.Render("Could not fetch featured skills: " + err.Error()))
 		fmt.Println(styles.MutedStyle.Render("Showing fallback list..."))
 		fmt.Println()
 		showFallbackSkills()
 		return
 	}
-	if source == registry.RegistrySourceCache {
-		fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
-		fmt.Println()
-	}
 
-	// Group by source
-	sources := make(map[string][]registry.Skill)
-	for _, skill := range reg.Skills {
-		sources[skill.Source] = append(sources[skill.Source], skill)
-	}
-
-	// Show featured first
-	for source, skills := range sources {
-		fmt.Printf("%s %s\n",
-			styles.SkillNameStyle.Render(source),
-			styles.MutedStyle.Render(fmt.Sprintf("(%d skills)", len(skills))),
-		)
-		fmt.Println()
-
-		for _, skill := range skills {
-			starStr := ""
-			if skill.Stars > 0 {
-				starStr = fmt.Sprintf(" %s%d", styles.IconStar, skill.Stars)
-			}
-			featuredStr := ""
-			if skill.Featured {
-				featuredStr = " " + styles.BadgeStyle.Render("featured")
-			}
-
-			fmt.Printf("    %s %-22s%s%s\n",
-				styles.SuccessStyle.Render(styles.IconPackage),
-				skill.Name,
-				styles.MutedStyle.Render(starStr),
-				featuredStr,
-			)
-			if skill.Description != "" {
-				desc := skill.Description
-				if len(desc) > 50 {
-					desc = desc[:47] + "..."
-				}
-				fmt.Printf("       %s\n", styles.SkillDescStyle.Render(desc))
-			}
-			fmt.Printf("       %s sk install %s\n\n",
-				styles.MutedStyle.Render(styles.IconArrow),
-				skill.Install,
-			)
+	for i, skill := range featured.Skills {
+		starStr := ""
+		if skill.Stars > 0 {
+			starStr = fmt.Sprintf(" %s%d", styles.IconStar, skill.Stars)
 		}
+
+		fmt.Printf("  %s %-28s%s\n",
+			styles.SuccessStyle.Render(fmt.Sprintf("%2d.", i+1)),
+			styles.SkillNameStyle.Render(skill.Name),
+			styles.MutedStyle.Render(starStr),
+		)
+		if skill.Description != "" {
+			desc := skill.Description
+			if len(desc) > 60 {
+				desc = desc[:57] + "..."
+			}
+			fmt.Printf("      %s\n", styles.SkillDescStyle.Render(desc))
+		}
+		fmt.Printf("      %s sk install %s\n\n",
+			styles.MutedStyle.Render(styles.IconArrow),
+			skill.Install,
+		)
 	}
 
 	fmt.Println(styles.MutedStyle.Render("─────────────────────────────────────────────────"))
-	updatedAt := reg.UpdatedAt
+	updatedAt := featured.UpdatedAt
 	if len(updatedAt) >= 10 {
 		updatedAt = updatedAt[:10]
 	}
-	fmt.Printf("%s Registry: %d skills | Updated: %s\n",
+	fmt.Printf("%s %d featured skills | Updated: %s\n",
 		styles.MutedStyle.Render(styles.IconInfo),
-		reg.TotalCount,
+		featured.Count,
 		updatedAt,
 	)
 	fmt.Println()
@@ -153,21 +128,35 @@ func showByCategory(category string) {
 	skills, err := registry.GetByCategory(category)
 	if err != nil {
 		fmt.Println(styles.RenderError("Failed to fetch category: " + err.Error()))
+		showAvailableCategories()
 		return
 	}
 
 	if len(skills) == 0 {
 		fmt.Println(styles.MutedStyle.Render("No skills found in this category."))
 		fmt.Println()
-		fmt.Println(styles.MutedStyle.Render("Available categories: documents, development, design, testing, productivity, data"))
+		showAvailableCategories()
 		return
 	}
 
-	for _, skill := range skills {
-		fmt.Printf("  %s %s\n",
+	// Limit display to top 50 for large categories
+	displaySkills := skills
+	truncated := false
+	if len(displaySkills) > 50 {
+		displaySkills = displaySkills[:50]
+		truncated = true
+	}
+
+	for _, skill := range displaySkills {
+		fmt.Printf("  %s %s",
 			styles.SuccessStyle.Render(styles.IconPackage),
 			styles.SkillNameStyle.Render(skill.Name),
 		)
+		if skill.Stars > 0 {
+			fmt.Printf("  %s%d", styles.MutedStyle.Render(styles.IconStar), skill.Stars)
+		}
+		fmt.Println()
+
 		if skill.Description != "" {
 			desc := skill.Description
 			if len(desc) > 60 {
@@ -181,11 +170,38 @@ func showByCategory(category string) {
 		)
 	}
 
-	fmt.Printf("\n%s Found %d skill(s) in '%s'\n\n",
-		styles.MutedStyle.Render(styles.IconInfo),
-		len(skills),
-		category,
-	)
+	if truncated {
+		fmt.Printf("%s Showing top 50 of %d skills in '%s'\n\n",
+			styles.MutedStyle.Render(styles.IconInfo),
+			len(skills),
+			category,
+		)
+	} else {
+		fmt.Printf("%s Found %d skill(s) in '%s'\n\n",
+			styles.MutedStyle.Render(styles.IconInfo),
+			len(skills),
+			category,
+		)
+	}
+}
+
+func showAvailableCategories() {
+	idx, err := registry.FetchCategoryIndex()
+	if err != nil {
+		return
+	}
+
+	fmt.Println(styles.MutedStyle.Render("Available categories:"))
+	for _, cat := range idx.Categories {
+		if cat.Count > 10 {
+			fmt.Printf("  %s %-24s %s\n",
+				styles.MutedStyle.Render(styles.IconFolder),
+				cat.Name,
+				styles.MutedStyle.Render(fmt.Sprintf("(%d skills)", cat.Count)),
+			)
+		}
+	}
+	fmt.Println()
 }
 
 func searchRegistry(keyword string) {
@@ -215,9 +231,15 @@ func searchRegistry(keyword string) {
 		return
 	}
 
+	total := len(skills)
+	// Limit display to top 30 results
+	if len(skills) > 30 {
+		skills = skills[:30]
+	}
+
 	fmt.Printf("%s Found %d skill(s):\n\n",
 		styles.SuccessStyle.Render(styles.IconCheck),
-		len(skills),
+		total,
 	)
 
 	for i, skill := range skills {
@@ -265,6 +287,14 @@ func searchRegistry(keyword string) {
 		fmt.Printf("    %s sk install %s\n\n",
 			styles.MutedStyle.Render(styles.IconArrow),
 			skill.Install,
+		)
+	}
+
+	if total > len(skills) {
+		fmt.Printf("%s Showing top %d of %d results. Use --category to narrow down.\n\n",
+			styles.MutedStyle.Render(styles.IconInfo),
+			len(skills),
+			total,
 		)
 	}
 }

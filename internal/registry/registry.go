@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -71,6 +72,44 @@ type Category struct {
 	Skills    []Skill `json:"skills"`
 }
 
+// Featured represents the featured skills response
+type Featured struct {
+	UpdatedAt string  `json:"updated_at"`
+	Count     int     `json:"count"`
+	Skills    []Skill `json:"skills"`
+}
+
+// CategoryIndexEntry represents one entry in the category index
+type CategoryIndexEntry struct {
+	Name  string `json:"name"`
+	Code  string `json:"code"`
+	Count int    `json:"count"`
+}
+
+// CategoryIndex represents the category index
+type CategoryIndex struct {
+	UpdatedAt  string               `json:"updated_at"`
+	Categories []CategoryIndexEntry `json:"categories"`
+}
+
+// SearchIndexEntry represents one skill in the compact search index
+type SearchIndexEntry struct {
+	Name        string   `json:"n"`
+	Description string   `json:"d"`
+	Category    string   `json:"c"`
+	Tags        []string `json:"g"`
+	Stars       int      `json:"r"`
+	Install     string   `json:"i"`
+	Branch      string   `json:"b"`
+}
+
+// SearchIndex represents the compact search index
+type SearchIndex struct {
+	Version    string             `json:"v"`
+	TotalCount int                `json:"t"`
+	Skills     []SearchIndexEntry `json:"s"`
+}
+
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
@@ -81,6 +120,10 @@ func registryBaseURL() string {
 		return DefaultRegistryURL
 	}
 	return strings.TrimRight(base, "/")
+}
+
+func docsBaseURL() string {
+	return registryBaseURL() + "/docs"
 }
 
 // FetchRegistry fetches the full registry
@@ -121,9 +164,31 @@ func FetchRegistryWithSource() (*Registry, RegistrySource, error) {
 	return &registry, RegistrySourceRemote, nil
 }
 
-// FetchCategory fetches skills for a specific category
+// FetchFeatured fetches the top featured skills (52KB vs 44MB full registry)
+func FetchFeatured() (*Featured, error) {
+	url := docsBaseURL() + "/featured.json"
+
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch featured: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("featured returned status %d", resp.StatusCode)
+	}
+
+	var featured Featured
+	if err := json.NewDecoder(resp.Body).Decode(&featured); err != nil {
+		return nil, fmt.Errorf("failed to parse featured: %w", err)
+	}
+
+	return &featured, nil
+}
+
+// FetchCategory fetches skills for a specific category from docs
 func FetchCategory(category string) (*Category, error) {
-	url := fmt.Sprintf("%s/categories/%s.json", registryBaseURL(), category)
+	url := fmt.Sprintf("%s/categories/%s.json", docsBaseURL(), category)
 
 	resp, err := httpClient.Get(url)
 	if err != nil {
@@ -143,44 +208,112 @@ func FetchCategory(category string) (*Category, error) {
 	return &cat, nil
 }
 
-// Search searches for skills matching the keyword
-func Search(keyword string) ([]Skill, error) {
-	registry, err := FetchRegistry()
+// FetchCategoryIndex fetches the category index listing all available categories
+func FetchCategoryIndex() (*CategoryIndex, error) {
+	url := docsBaseURL() + "/categories/index.json"
+
+	resp, err := httpClient.Get(url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch category index: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("category index returned status %d", resp.StatusCode)
 	}
 
-	keyword = strings.ToLower(keyword)
-	var results []Skill
-
-	for _, skill := range registry.Skills {
-		// Match by name
-		if strings.Contains(strings.ToLower(skill.Name), keyword) {
-			results = append(results, skill)
-			continue
-		}
-
-		// Match by description
-		if strings.Contains(strings.ToLower(skill.Description), keyword) {
-			results = append(results, skill)
-			continue
-		}
-
-		// Match by tags
-		for _, tag := range skill.Tags {
-			if strings.Contains(strings.ToLower(tag), keyword) {
-				results = append(results, skill)
-				break
-			}
-		}
+	var idx CategoryIndex
+	if err := json.NewDecoder(resp.Body).Decode(&idx); err != nil {
+		return nil, fmt.Errorf("failed to parse category index: %w", err)
 	}
 
-	return results, nil
+	return &idx, nil
 }
 
-// SearchWithSource searches for skills and returns the data source.
+// FetchSearchIndex fetches the gzip-compressed search index (~9MB vs 44MB full registry)
+func FetchSearchIndex() (*SearchIndex, RegistrySource, error) {
+	if cached, err := loadSearchIndexCache(); err == nil {
+		return cached, RegistrySourceCache, nil
+	}
+
+	url := docsBaseURL() + "/search-index.json.gz"
+
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch search index: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("search index returned status %d", resp.StatusCode)
+	}
+
+	gzReader, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to decompress search index: %w", err)
+	}
+	defer gzReader.Close()
+
+	var idx SearchIndex
+	if err := json.NewDecoder(gzReader).Decode(&idx); err != nil {
+		return nil, "", fmt.Errorf("failed to parse search index: %w", err)
+	}
+
+	_ = saveSearchIndexCache(&idx)
+	return &idx, RegistrySourceRemote, nil
+}
+
+// categoryCodeToName maps short category codes back to full names
+var categoryCodeToName = map[string]string{
+	"dev": "development",
+	"ops": "devops",
+	"sec": "security",
+	"doc": "documents",
+	"des": "design",
+	"tst": "testing",
+	"prd": "product",
+	"mkt": "marketing",
+	"pro": "productivity",
+	"dat": "data",
+	"off": "official",
+	"oth": "other",
+}
+
+// entryToSkill converts a compact SearchIndexEntry to a full Skill
+func entryToSkill(e SearchIndexEntry) Skill {
+	// Resolve category code to full name
+	cat := e.Category
+	if full, ok := categoryCodeToName[cat]; ok {
+		cat = full
+	}
+
+	// Extract repo from install path
+	repo := e.Install
+	if parts := strings.SplitN(repo, "/", 3); len(parts) >= 2 {
+		repo = parts[0] + "/" + parts[1]
+	}
+
+	return Skill{
+		Name:        e.Name,
+		Description: e.Description,
+		Install:     e.Install,
+		Repo:        repo,
+		Branch:      e.Branch,
+		Category:    cat,
+		Tags:        e.Tags,
+		Stars:       e.Stars,
+	}
+}
+
+// Search searches for skills matching the keyword
+func Search(keyword string) ([]Skill, error) {
+	skills, _, err := SearchWithSource(keyword)
+	return skills, err
+}
+
+// SearchWithSource searches using the compact search index (9MB gzip vs 44MB full registry)
 func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
-	registry, source, err := FetchRegistryWithSource()
+	idx, source, err := FetchSearchIndex()
 	if err != nil {
 		return nil, "", err
 	}
@@ -188,20 +321,20 @@ func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
 	keyword = strings.ToLower(keyword)
 	var results []Skill
 
-	for _, skill := range registry.Skills {
-		if strings.Contains(strings.ToLower(skill.Name), keyword) {
-			results = append(results, skill)
+	for _, entry := range idx.Skills {
+		if strings.Contains(strings.ToLower(entry.Name), keyword) {
+			results = append(results, entryToSkill(entry))
 			continue
 		}
 
-		if strings.Contains(strings.ToLower(skill.Description), keyword) {
-			results = append(results, skill)
+		if strings.Contains(strings.ToLower(entry.Description), keyword) {
+			results = append(results, entryToSkill(entry))
 			continue
 		}
 
-		for _, tag := range skill.Tags {
+		for _, tag := range entry.Tags {
 			if strings.Contains(strings.ToLower(tag), keyword) {
-				results = append(results, skill)
+				results = append(results, entryToSkill(entry))
 				break
 			}
 		}
@@ -279,6 +412,53 @@ func saveRegistryCache(registry *Registry) error {
 	}
 
 	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+func searchIndexCachePath() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil || cacheDir == "" {
+		homeDir, _ := os.UserHomeDir()
+		cacheDir = filepath.Join(homeDir, ".cache")
+	}
+	return filepath.Join(cacheDir, "sk", "search-index.json")
+}
+
+func loadSearchIndexCache() (*SearchIndex, error) {
+	path := searchIndexCachePath()
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	ttl := time.Duration(config.GetRegistryTTL()) * time.Hour
+	if time.Since(info.ModTime()) > ttl {
+		return nil, fmt.Errorf("search index cache expired")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var idx SearchIndex
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return nil, err
+	}
+
+	return &idx, nil
+}
+
+func saveSearchIndexCache(idx *SearchIndex) error {
+	path := searchIndexCachePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(idx)
 	if err != nil {
 		return err
 	}
