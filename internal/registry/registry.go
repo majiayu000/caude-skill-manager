@@ -175,7 +175,7 @@ func fetchJSON(url string, target any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("returned status %d", resp.StatusCode)
@@ -187,7 +187,7 @@ func fetchJSON(url string, target any) error {
 		if err != nil {
 			return err
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 		reader = gzReader
 	}
 

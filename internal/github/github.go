@@ -398,16 +398,22 @@ func extractSkillFile(r *zip.ReadCloser, rootPrefix, targetDir, filePath string)
 		}
 		rc, err := f.Open()
 		if err != nil {
-			outFile.Close()
+			if closeErr := outFile.Close(); closeErr != nil {
+				return closeErr
+			}
 			return err
 		}
 		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
+		if closeErr := rc.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+		if closeErr := outFile.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
 		return err
 	}
 
-	os.RemoveAll(targetDir)
+	_ = os.RemoveAll(targetDir)
 	return fmt.Errorf("no file found at path '%s' - check if the path is correct", filePath)
 }
 

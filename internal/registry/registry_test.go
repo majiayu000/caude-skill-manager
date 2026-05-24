@@ -11,10 +11,10 @@ import (
 func TestFetchSearchIndexFollowsManifestShards(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search-index.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"deprecated_full_payload":true,"manifest":"search-index-manifest.json","v":"2026-05-24","t":2}`))
+		writeJSON(t, w, `{"deprecated_full_payload":true,"manifest":"search-index-manifest.json","v":"2026-05-24","t":2}`)
 	})
 	mux.HandleFunc("/search-index-manifest.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"v":"2026-05-24","total_count":2,"shards":[{"gzip_path":"search-shards/part-000.json.gz","count":2}]}`))
+		writeJSON(t, w, `{"v":"2026-05-24","total_count":2,"shards":[{"gzip_path":"search-shards/part-000.json.gz","count":2}]}`)
 	})
 	mux.HandleFunc("/search-shards/part-000.json.gz", func(w http.ResponseWriter, r *http.Request) {
 		writeGzip(t, w, `{"v":"2026-05-24","count":2,"s":[{"n":"frontend-testing","d":"testing skill","c":"tst","g":["test"],"r":10,"i":"owner/repo/.agents/skills/frontend-testing/SKILL.md","b":"main"},{"n":"docx","d":"docs","c":"doc","g":[],"r":5,"i":"anthropics/skills/skills/docx","b":"main"}]}`)
@@ -38,10 +38,10 @@ func TestFetchSearchIndexFollowsManifestShards(t *testing.T) {
 func TestFetchCategoryFollowsManifestParts(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/categories/testing.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"category":"testing","code":"testing","count":1,"deprecated_full_payload":true,"manifest":"categories/testing/manifest.json"}`))
+		writeJSON(t, w, `{"category":"testing","code":"testing","count":1,"deprecated_full_payload":true,"manifest":"categories/testing/manifest.json"}`)
 	})
 	mux.HandleFunc("/categories/testing/manifest.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"category":"testing","code":"testing","count":1,"parts":[{"gzip_path":"categories/testing/part-000.json.gz","count":1}]}`))
+		writeJSON(t, w, `{"category":"testing","code":"testing","count":1,"parts":[{"gzip_path":"categories/testing/part-000.json.gz","count":1}]}`)
 	})
 	mux.HandleFunc("/categories/testing/part-000.json.gz", func(w http.ResponseWriter, r *http.Request) {
 		writeGzip(t, w, `{"category":"testing","count":1,"skills":[{"name":"frontend-testing","description":"testing skill","install":"owner/repo/.agents/skills/frontend-testing/SKILL.md","category":"testing"}]}`)
@@ -106,5 +106,14 @@ func writeGzip(t *testing.T, w http.ResponseWriter, body string) {
 	if err := gz.Close(); err != nil {
 		t.Fatal(err)
 	}
-	w.Write(b.Bytes())
+	if _, err := w.Write(b.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeJSON(t *testing.T, w http.ResponseWriter, body string) {
+	t.Helper()
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
 }
