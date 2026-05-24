@@ -19,6 +19,7 @@ type RepoInfo struct {
 	Owner            string
 	Repo             string
 	Path             string // subdirectory path (for monorepo skills)
+	FilePath         string // direct SKILL.md-like file path
 	Branch           string
 	TreeRef          string
 	TreeRefAmbiguous bool
@@ -105,10 +106,30 @@ func ParseGitHubURL(input string) (*RepoInfo, error) {
 		}
 	}
 
+	normalizeSkillPath(info)
+
 	info.FullURL = fmt.Sprintf("https://github.com/%s/%s", info.Owner, info.Repo)
 	info.CloneURL = info.FullURL + ".git"
 
 	return info, nil
+}
+
+func normalizeSkillPath(info *RepoInfo) {
+	info.Path = strings.Trim(strings.ReplaceAll(info.Path, "\\", "/"), "/")
+	if info.Path == "" {
+		return
+	}
+
+	base := pathBase(info.Path)
+	lowerBase := strings.ToLower(base)
+	if base == "SKILL.md" {
+		info.Path = pathDir(info.Path)
+		return
+	}
+	if lowerBase == "skill.md" || strings.HasSuffix(lowerBase, "_skill.md") {
+		info.FilePath = info.Path
+		info.Path = ""
+	}
 }
 
 // DownloadAndExtract downloads a repository and extracts to skills directory
@@ -158,7 +179,6 @@ func DownloadAndExtract(info *RepoInfo, targetName string) error {
 	}
 	tmpFile.Close()
 
-	// Extract zip
 	targetDir := filepath.Join(config.GetSkillsDir(), targetName)
 
 	// Try the specified path first
@@ -277,6 +297,10 @@ func extractZip(zipPath, targetDir string, info *RepoInfo) error {
 		rootPrefix = fmt.Sprintf("%s-%s/", info.Repo, info.Branch)
 	}
 
+	if info.FilePath != "" {
+		return extractSkillFile(r, rootPrefix, targetDir, info.FilePath)
+	}
+
 	subPath := ""
 	if info.Path != "" {
 		subPath = info.Path + "/"
@@ -352,6 +376,41 @@ func extractZip(zipPath, targetDir string, info *RepoInfo) error {
 	return nil
 }
 
+func extractSkillFile(r *zip.ReadCloser, rootPrefix, targetDir, filePath string) error {
+	wanted := rootPrefix + strings.Trim(filePath, "/")
+
+	for _, f := range r.File {
+		if f.Name != wanted || f.FileInfo().IsDir() {
+			continue
+		}
+
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			return err
+		}
+		targetPath := filepath.Join(targetDir, "SKILL.md")
+		if !isWithinDir(targetDir, targetPath) {
+			return fmt.Errorf("zip entry escapes target dir: %s", filePath)
+		}
+
+		outFile, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+		return err
+	}
+
+	os.RemoveAll(targetDir)
+	return fmt.Errorf("no file found at path '%s' - check if the path is correct", filePath)
+}
+
 func isWithinDir(root, target string) bool {
 	root = filepath.Clean(root)
 	target = filepath.Clean(target)
@@ -364,10 +423,38 @@ func isWithinDir(root, target string) bool {
 
 // GetSkillName determines the skill name from RepoInfo
 func GetSkillName(info *RepoInfo) string {
+	if info.FilePath != "" {
+		base := pathBase(info.FilePath)
+		lowerBase := strings.ToLower(base)
+		if lowerBase == "skill.md" {
+			dir := pathDir(info.FilePath)
+			if dir != "" {
+				return pathBase(dir)
+			}
+		}
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		name = strings.TrimSuffix(strings.TrimSuffix(name, "_SKILL"), "-SKILL")
+		name = strings.TrimSuffix(strings.TrimSuffix(name, "_skill"), "-skill")
+		return name
+	}
 	if info.Path != "" {
 		// Use the last part of the path
 		parts := strings.Split(info.Path, "/")
 		return parts[len(parts)-1]
 	}
 	return info.Repo
+}
+
+func pathBase(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	return parts[len(parts)-1]
+}
+
+func pathDir(path string) string {
+	cleaned := strings.Trim(path, "/")
+	idx := strings.LastIndex(cleaned, "/")
+	if idx == -1 {
+		return ""
+	}
+	return cleaned[:idx]
 }
