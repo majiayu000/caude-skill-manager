@@ -534,13 +534,21 @@ func ResolveInstall(name string) (string, RegistrySource, error) {
 		return "", "", err
 	}
 
+	install, err := resolveInstallFromIndex(idx, name)
+	return install, source, err
+}
+
+func resolveInstallFromIndex(idx *SearchIndex, name string) (string, error) {
 	for _, skill := range idx.Skills {
+		if !isInstallableSkillRef(skill.Install) {
+			continue
+		}
 		if strings.EqualFold(skill.Name, name) {
-			return skill.Install, source, nil
+			return skill.Install, nil
 		}
 	}
 
-	return "", source, fmt.Errorf("no skill named %q in registry", name)
+	return "", fmt.Errorf("no skill named %q in registry", name)
 }
 
 func loadRegistryCache() (*Registry, error) {

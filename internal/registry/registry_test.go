@@ -96,6 +96,27 @@ func TestInstallableSkillRefRejectsCommandMarkdown(t *testing.T) {
 	}
 }
 
+func TestResolveInstallFromIndexRejectsCommandMarkdown(t *testing.T) {
+	idx := &SearchIndex{
+		Skills: []SearchIndexEntry{
+			{Name: "sync-testing-skill", Install: "udecode/plate/.claude/commands/sync-testing-skill.md"},
+			{Name: "frontend-testing", Install: "langgenius/dify/.agents/skills/frontend-testing/SKILL.md"},
+		},
+	}
+
+	if _, err := resolveInstallFromIndex(idx, "sync-testing-skill"); err == nil {
+		t.Fatal("expected command markdown ref to be rejected")
+	}
+
+	install, err := resolveInstallFromIndex(idx, "frontend-testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if install != "langgenius/dify/.agents/skills/frontend-testing/SKILL.md" {
+		t.Fatalf("unexpected install: %s", install)
+	}
+}
+
 func writeGzip(t *testing.T, w http.ResponseWriter, body string) {
 	t.Helper()
 	var b bytes.Buffer
