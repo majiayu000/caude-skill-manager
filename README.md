@@ -33,7 +33,18 @@
 # Using Go
 go install github.com/majiayu000/caude-skill-manager@latest
 
-# Or download from releases
+# Binary archives will be available after the first tagged GitHub release.
+```
+
+### Release status
+
+As of 2026-06-06, this repository does not have a published GitHub release yet.
+Use `go install github.com/majiayu000/caude-skill-manager@latest` until a `v*`
+tag has been published and the release assets are visible on GitHub.
+
+After the first release, the expected archive names are:
+
+```bash
 # macOS (Apple Silicon)
 curl -L https://github.com/majiayu000/caude-skill-manager/releases/latest/download/sk_darwin_arm64.tar.gz | tar xz
 sudo mv sk /usr/local/bin/
@@ -75,7 +86,7 @@ sk uninstall my-skill
 sk doctor
 
 # Update skills
-sk update
+sk update            # Planned; currently prints manual reinstall guidance
 ```
 
 ## Demo
@@ -117,7 +128,7 @@ Anthropic Official (anthropics/skills)
 | `sk search [keyword]` | `s`, `find` | Search for skills |
 | `sk info <name>` | `show` | Show skill details |
 | `sk uninstall <name>` | `rm`, `remove` | Remove a skill |
-| `sk update [name]` | `up` | Update skills |
+| `sk update [name]` | `up`, `upgrade` | Planned update flow; currently prints manual reinstall guidance |
 | `sk doctor` | - | Check skills health |
 
 ## Supported Sources
@@ -166,6 +177,26 @@ Config file: `~/.skrc`
 Registry cache:
 - Location: `~/.cache/sk/registry.json`
 - TTL: `registry_ttl_hours` (cache is ignored after expiry)
+
+## Limitations
+
+- No binary GitHub release is published yet; use the Go install path until the
+  first `v*` release is cut.
+- `sk update` is present as a command, but automated updates are not implemented
+  yet. For now, reinstall with `sk uninstall <name> && sk install <source>`.
+- Registry-backed search and install depend on the configured registry URL and
+  network access. Featured search may show a small fallback list when the
+  registry is unavailable.
+- Installs are designed for public GitHub repositories and GitHub URLs. Private
+  repositories, enterprise GitHub hosts, and authenticated downloads are not
+  documented as supported.
+- Installed skill content is copied into the configured local skills directory.
+  `sk` does not sandbox, sign, or audit third-party skill content before use.
+
+## Changelog
+
+Release history and launch-readiness notes are tracked in [CHANGELOG.md](CHANGELOG.md).
+The release checklist is documented in [docs/release.md](docs/release.md).
 
 ## Built With
 
