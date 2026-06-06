@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,10 +21,12 @@ const (
 
 // Registry represents the skill registry
 type Registry struct {
-	Version    string  `json:"version"`
-	UpdatedAt  string  `json:"updated_at"`
-	TotalCount int     `json:"total_count"`
-	Skills     []Skill `json:"skills"`
+	Version               string  `json:"version"`
+	UpdatedAt             string  `json:"updated_at"`
+	TotalCount            int     `json:"total_count"`
+	Skills                []Skill `json:"skills"`
+	DeprecatedFullPayload bool    `json:"deprecated_full_payload"`
+	Manifest              string  `json:"manifest"`
 }
 
 // RegistrySource indicates where registry data came from.
@@ -66,10 +69,13 @@ func (s *Skill) GitHubURL() string {
 
 // Category represents a category index
 type Category struct {
-	Category  string  `json:"category"`
-	UpdatedAt string  `json:"updated_at"`
-	Count     int     `json:"count"`
-	Skills    []Skill `json:"skills"`
+	Category              string  `json:"category"`
+	Code                  string  `json:"code"`
+	UpdatedAt             string  `json:"updated_at"`
+	Count                 int     `json:"count"`
+	Skills                []Skill `json:"skills"`
+	DeprecatedFullPayload bool    `json:"deprecated_full_payload"`
+	Manifest              string  `json:"manifest"`
 }
 
 // Featured represents the featured skills response
@@ -110,6 +116,40 @@ type SearchIndex struct {
 	Skills     []SearchIndexEntry `json:"s"`
 }
 
+type artifactPart struct {
+	Path     string `json:"path"`
+	GzipPath string `json:"gzip_path"`
+	Count    int    `json:"count"`
+}
+
+type searchIndexPayload struct {
+	Version               string             `json:"v"`
+	TotalCount            int                `json:"t"`
+	Skills                []SearchIndexEntry `json:"s"`
+	DeprecatedFullPayload bool               `json:"deprecated_full_payload"`
+	Manifest              string             `json:"manifest"`
+}
+
+type searchManifest struct {
+	Version    string         `json:"v"`
+	TotalCount int            `json:"total_count"`
+	Shards     []artifactPart `json:"shards"`
+}
+
+type searchShard struct {
+	Version string             `json:"v"`
+	Count   int                `json:"count"`
+	Skills  []SearchIndexEntry `json:"s"`
+}
+
+type categoryManifest struct {
+	Category  string         `json:"category"`
+	Code      string         `json:"code"`
+	UpdatedAt string         `json:"updated_at"`
+	Count     int            `json:"count"`
+	Parts     []artifactPart `json:"parts"`
+}
+
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
@@ -124,6 +164,37 @@ func registryBaseURL() string {
 
 func docsBaseURL() string {
 	return registryBaseURL() + "/docs"
+}
+
+func artifactURL(baseURL, path string) string {
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(path, "/")
+}
+
+func fetchJSON(url string, target any) error {
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("returned status %d", resp.StatusCode)
+	}
+
+	var reader io.Reader = resp.Body
+	if strings.HasSuffix(url, ".gz") {
+		gzReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = gzReader.Close() }()
+		reader = gzReader
+	}
+
+	if err := json.NewDecoder(reader).Decode(target); err != nil {
+		return err
+	}
+	return nil
 }
 
 // FetchRegistry fetches the full registry
@@ -160,6 +231,10 @@ func FetchRegistryWithSource() (*Registry, RegistrySource, error) {
 		return nil, "", fmt.Errorf("failed to parse registry: %w", err)
 	}
 
+	if registry.DeprecatedFullPayload && len(registry.Skills) == 0 {
+		return nil, "", fmt.Errorf("registry payload moved to %s; use search or category APIs", registry.Manifest)
+	}
+
 	_ = saveRegistryCache(&registry)
 	return &registry, RegistrySourceRemote, nil
 }
@@ -188,24 +263,56 @@ func FetchFeatured() (*Featured, error) {
 
 // FetchCategory fetches skills for a specific category from docs
 func FetchCategory(category string) (*Category, error) {
-	url := fmt.Sprintf("%s/categories/%s.json", docsBaseURL(), category)
+	return fetchCategoryFromBaseURL(docsBaseURL(), category)
+}
 
-	resp, err := httpClient.Get(url)
-	if err != nil {
+func fetchCategoryFromBaseURL(baseURL, category string) (*Category, error) {
+	var cat Category
+	url := artifactURL(baseURL, fmt.Sprintf("categories/%s.json", category))
+	if err := fetchJSON(url, &cat); err != nil {
 		return nil, fmt.Errorf("failed to fetch category: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("category returned status %d", resp.StatusCode)
-	}
-
-	var cat Category
-	if err := json.NewDecoder(resp.Body).Decode(&cat); err != nil {
-		return nil, fmt.Errorf("failed to parse category: %w", err)
+	if cat.DeprecatedFullPayload && cat.Manifest != "" {
+		return fetchCategoryFromManifest(baseURL, cat.Manifest)
 	}
 
 	return &cat, nil
+}
+
+func fetchCategoryFromManifest(baseURL, manifestPath string) (*Category, error) {
+	var manifest categoryManifest
+	if err := fetchJSON(artifactURL(baseURL, manifestPath), &manifest); err != nil {
+		return nil, fmt.Errorf("failed to fetch category manifest: %w", err)
+	}
+
+	category := &Category{
+		Category:  manifest.Category,
+		Code:      manifest.Code,
+		UpdatedAt: manifest.UpdatedAt,
+		Count:     manifest.Count,
+	}
+
+	for _, part := range manifest.Parts {
+		partPath := part.GzipPath
+		if partPath == "" {
+			partPath = part.Path
+		}
+		if partPath == "" {
+			return nil, fmt.Errorf("category manifest contains empty part path")
+		}
+
+		var payload Category
+		if err := fetchJSON(artifactURL(baseURL, partPath), &payload); err != nil {
+			return nil, fmt.Errorf("failed to fetch category part %s: %w", partPath, err)
+		}
+		category.Skills = append(category.Skills, payload.Skills...)
+	}
+
+	if category.Count == 0 {
+		category.Count = len(category.Skills)
+	}
+	return category, nil
 }
 
 // FetchCategoryIndex fetches the category index listing all available categories
@@ -230,37 +337,88 @@ func FetchCategoryIndex() (*CategoryIndex, error) {
 	return &idx, nil
 }
 
-// FetchSearchIndex fetches the gzip-compressed search index (~9MB vs 44MB full registry)
+// FetchSearchIndex fetches the search index, following the registry shard
+// manifest when the compatibility entry point is a pointer.
 func FetchSearchIndex() (*SearchIndex, RegistrySource, error) {
 	if cached, err := loadSearchIndexCache(); err == nil {
 		return cached, RegistrySourceCache, nil
 	}
 
-	url := docsBaseURL() + "/search-index.json.gz"
-
-	resp, err := httpClient.Get(url)
+	idx, err := fetchSearchIndexFromBaseURL(docsBaseURL())
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch search index: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("search index returned status %d", resp.StatusCode)
+		return nil, "", err
 	}
 
-	gzReader, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to decompress search index: %w", err)
-	}
-	defer gzReader.Close()
+	_ = saveSearchIndexCache(idx)
+	return idx, RegistrySourceRemote, nil
+}
 
-	var idx SearchIndex
-	if err := json.NewDecoder(gzReader).Decode(&idx); err != nil {
-		return nil, "", fmt.Errorf("failed to parse search index: %w", err)
+func fetchSearchIndexFromBaseURL(baseURL string) (*SearchIndex, error) {
+	idx, err := fetchSearchIndexFromPath(baseURL, "search-index.json")
+	if err == nil {
+		return idx, nil
+	}
+	idx, gzipErr := fetchSearchIndexFromPath(baseURL, "search-index.json.gz")
+	if gzipErr == nil {
+		return idx, nil
+	}
+	return nil, fmt.Errorf("failed to fetch search index: %w", err)
+}
+
+func fetchSearchIndexFromPath(baseURL, indexPath string) (*SearchIndex, error) {
+	var payload searchIndexPayload
+	if err := fetchJSON(artifactURL(baseURL, indexPath), &payload); err != nil {
+		return nil, err
 	}
 
-	_ = saveSearchIndexCache(&idx)
-	return &idx, RegistrySourceRemote, nil
+	if payload.DeprecatedFullPayload && payload.Manifest != "" {
+		return fetchSearchIndexFromManifest(baseURL, payload.Manifest, payload.Version, payload.TotalCount)
+	}
+
+	return &SearchIndex{
+		Version:    payload.Version,
+		TotalCount: payload.TotalCount,
+		Skills:     payload.Skills,
+	}, nil
+}
+
+func fetchSearchIndexFromManifest(baseURL, manifestPath, fallbackVersion string, fallbackTotal int) (*SearchIndex, error) {
+	var manifest searchManifest
+	if err := fetchJSON(artifactURL(baseURL, manifestPath), &manifest); err != nil {
+		return nil, fmt.Errorf("failed to fetch search manifest: %w", err)
+	}
+
+	idx := &SearchIndex{
+		Version:    manifest.Version,
+		TotalCount: manifest.TotalCount,
+	}
+	if idx.Version == "" {
+		idx.Version = fallbackVersion
+	}
+	if idx.TotalCount == 0 {
+		idx.TotalCount = fallbackTotal
+	}
+
+	for _, shard := range manifest.Shards {
+		shardPath := shard.GzipPath
+		if shardPath == "" {
+			shardPath = shard.Path
+		}
+		if shardPath == "" {
+			return nil, fmt.Errorf("search manifest contains empty shard path")
+		}
+
+		var payload searchShard
+		if err := fetchJSON(artifactURL(baseURL, shardPath), &payload); err != nil {
+			return nil, fmt.Errorf("failed to fetch search shard %s: %w", shardPath, err)
+		}
+		idx.Skills = append(idx.Skills, payload.Skills...)
+	}
+
+	if idx.TotalCount == 0 {
+		idx.TotalCount = len(idx.Skills)
+	}
+	return idx, nil
 }
 
 // categoryCodeToName maps short category codes back to full names
@@ -322,6 +480,10 @@ func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
 	var results []Skill
 
 	for _, entry := range idx.Skills {
+		if !isInstallableSkillRef(entry.Install) {
+			continue
+		}
+
 		if strings.Contains(strings.ToLower(entry.Name), keyword) {
 			results = append(results, entryToSkill(entry))
 			continue
@@ -340,7 +502,7 @@ func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
 		}
 	}
 
-	return results, source, nil
+	return dedupeSkills(results), source, nil
 }
 
 // GetByCategory returns skills in a category
@@ -359,26 +521,34 @@ func GetByCategory(category string) ([]Skill, error) {
 				results = append(results, skill)
 			}
 		}
-		return results, nil
+		return dedupeSkills(results), nil
 	}
 
-	return cat.Skills, nil
+	return dedupeSkills(cat.Skills), nil
 }
 
 // ResolveInstall finds a skill by name and returns its install string.
 func ResolveInstall(name string) (string, RegistrySource, error) {
-	registry, source, err := FetchRegistryWithSource()
+	idx, source, err := FetchSearchIndex()
 	if err != nil {
 		return "", "", err
 	}
 
-	for _, skill := range registry.Skills {
+	install, err := resolveInstallFromIndex(idx, name)
+	return install, source, err
+}
+
+func resolveInstallFromIndex(idx *SearchIndex, name string) (string, error) {
+	for _, skill := range idx.Skills {
+		if !isInstallableSkillRef(skill.Install) {
+			continue
+		}
 		if strings.EqualFold(skill.Name, name) {
-			return skill.Install, source, nil
+			return skill.Install, nil
 		}
 	}
 
-	return "", source, fmt.Errorf("no skill named %q in registry", name)
+	return "", fmt.Errorf("no skill named %q in registry", name)
 }
 
 func loadRegistryCache() (*Registry, error) {
@@ -448,6 +618,9 @@ func loadSearchIndexCache() (*SearchIndex, error) {
 	if err := json.Unmarshal(data, &idx); err != nil {
 		return nil, err
 	}
+	if idx.TotalCount > 0 && len(idx.Skills) == 0 {
+		return nil, fmt.Errorf("search index cache contains pointer without skills")
+	}
 
 	return &idx, nil
 }
@@ -464,4 +637,56 @@ func saveSearchIndexCache(idx *SearchIndex) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+func dedupeSkills(skills []Skill) []Skill {
+	seen := make(map[string]int, len(skills))
+	result := make([]Skill, 0, len(skills))
+
+	for _, skill := range skills {
+		if !isInstallableSkillRef(skill.Install) {
+			continue
+		}
+		key := skill.Install
+		if key == "" {
+			key = skill.Name + "|" + skill.Repo + "|" + skill.Path
+		}
+		if idx, ok := seen[key]; ok {
+			if preferSkillName(skill, result[idx]) {
+				result[idx] = skill
+			}
+			continue
+		}
+		seen[key] = len(result)
+		result = append(result, skill)
+	}
+
+	return result
+}
+
+func preferSkillName(candidate, existing Skill) bool {
+	if candidate.Name == "" {
+		return false
+	}
+	if existing.Name == "" {
+		return true
+	}
+	return len(candidate.Name) < len(existing.Name)
+}
+
+func isInstallableSkillRef(install string) bool {
+	install = strings.TrimSpace(install)
+	if install == "" {
+		return true
+	}
+	parts := strings.Split(install, "/")
+	if len(parts) <= 2 {
+		return true
+	}
+
+	base := strings.ToLower(parts[len(parts)-1])
+	if !strings.HasSuffix(base, ".md") {
+		return true
+	}
+	return base == "skill.md" || strings.HasSuffix(base, "_skill.md")
 }
