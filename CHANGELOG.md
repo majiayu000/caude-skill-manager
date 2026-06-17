@@ -2,9 +2,9 @@
 
 All notable changes to `sk` should be recorded here.
 
-This project does not have a published GitHub release yet. Until the first
-`v*` tag is cut, use the `Unreleased` section as the source of truth for
-release notes.
+This project has Go module tags, but does not yet have published GitHub release
+assets. Until the first asset-backed release is cut, use the `Unreleased`
+section as the source of truth for release notes.
 
 ## Unreleased
 
@@ -12,6 +12,8 @@ release notes.
 
 - Documented release status, initial release checklist, and current limitations.
 - Linked the README to release notes and release-readiness documentation.
+- Added a registry consumer readiness spec for manifest/shard compatibility,
+  release verification, and follow-up issue tracking.
 
 ### Known limitations
 
