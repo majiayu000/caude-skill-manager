@@ -2,17 +2,14 @@
 
 ## Current status
 
-As of 2026-06-17, `majiayu000/caude-skill-manager` has Go module tags up to
-`v0.2.0`, but no published GitHub release assets. The repository already has a
-GoReleaser config and a tag-triggered GitHub Actions release workflow, but the
-install instructions should treat binary archives as unavailable until an
-asset-backed release is published.
+`v0.3.0` is the asset-backed manifest/shard registry compatibility release. The
+repository uses GoReleaser through a tag-triggered GitHub Actions workflow.
 
 ## Release path
 
 1. Confirm CI is green on `main`.
-2. Choose the next SemVer tag. `v0.3.0` is the expected next tag for the
-   manifest/shard registry compatibility release.
+2. Choose the next SemVer tag. For the manifest/shard registry compatibility
+   release, use `v0.3.0`.
 3. Review `CHANGELOG.md` and move the intended notes out of `Unreleased`.
 4. Create and push the tag:
 
@@ -49,7 +46,7 @@ bash scripts/smoke-registry.sh
 
 ## Release blockers before advertising binary installs
 
-- An asset-backed GitHub release must exist.
+- The asset-backed GitHub release must exist.
 - Release assets must include the archive names used by the README.
 - `go install github.com/majiayu000/caude-skill-manager@latest` must resolve to
   the new tag after it is visible to the Go proxy.
