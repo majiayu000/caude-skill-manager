@@ -205,38 +205,22 @@ func FetchRegistry() (*Registry, error) {
 
 // FetchRegistryWithSource fetches the full registry and indicates data source.
 func FetchRegistryWithSource() (*Registry, RegistrySource, error) {
-	url := registryBaseURL() + "/registry.json"
+	if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
+		return cached, RegistrySourceCache, nil
+	}
 
-	resp, err := httpClient.Get(url)
+	registry, err := fetchRegistryFromBaseURL(registryBaseURL())
 	if err != nil {
 		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
 			return cached, RegistrySourceCache, nil
 		}
 		return nil, "", fmt.Errorf("failed to fetch registry: %w", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
-			return cached, RegistrySourceCache, nil
-		}
-		return nil, "", fmt.Errorf("registry returned status %d", resp.StatusCode)
+	if err := saveRegistryCache(registry); err != nil {
+		return registry, RegistrySourceRemote, nil
 	}
-
-	var registry Registry
-	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
-		if cached, cacheErr := loadRegistryCache(); cacheErr == nil {
-			return cached, RegistrySourceCache, nil
-		}
-		return nil, "", fmt.Errorf("failed to parse registry: %w", err)
-	}
-
-	if registry.DeprecatedFullPayload && len(registry.Skills) == 0 {
-		return nil, "", fmt.Errorf("registry payload moved to %s; use search or category APIs", registry.Manifest)
-	}
-
-	_ = saveRegistryCache(&registry)
-	return &registry, RegistrySourceRemote, nil
+	return registry, RegistrySourceRemote, nil
 }
 
 // FetchFeatured fetches the top featured skills (52KB vs 44MB full registry)
@@ -277,6 +261,7 @@ func fetchCategoryFromBaseURL(baseURL, category string) (*Category, error) {
 		return fetchCategoryFromManifest(baseURL, cat.Manifest)
 	}
 
+	normalizeRegistrySkills(cat.Skills)
 	return &cat, nil
 }
 
@@ -306,6 +291,7 @@ func fetchCategoryFromManifest(baseURL, manifestPath string) (*Category, error) 
 		if err := fetchJSON(artifactURL(baseURL, partPath), &payload); err != nil {
 			return nil, fmt.Errorf("failed to fetch category part %s: %w", partPath, err)
 		}
+		normalizeRegistrySkills(payload.Skills)
 		category.Skills = append(category.Skills, payload.Skills...)
 	}
 
@@ -445,17 +431,13 @@ func entryToSkill(e SearchIndexEntry) Skill {
 		cat = full
 	}
 
-	// Extract repo from install path
-	repo := e.Install
-	if parts := strings.SplitN(repo, "/", 3); len(parts) >= 2 {
-		repo = parts[0] + "/" + parts[1]
-	}
+	install := normalizeInstallForBranch(e.Install, e.Branch)
 
 	return Skill{
 		Name:        e.Name,
 		Description: e.Description,
-		Install:     e.Install,
-		Repo:        repo,
+		Install:     install,
+		Repo:        repoFromInstallRef(install),
 		Branch:      e.Branch,
 		Category:    cat,
 		Tags:        e.Tags,
@@ -540,11 +522,12 @@ func ResolveInstall(name string) (string, RegistrySource, error) {
 
 func resolveInstallFromIndex(idx *SearchIndex, name string) (string, error) {
 	for _, skill := range idx.Skills {
-		if !isInstallableSkillRef(skill.Install) {
+		install := normalizeInstallForBranch(skill.Install, skill.Branch)
+		if !isInstallableSkillRef(install) {
 			continue
 		}
 		if strings.EqualFold(skill.Name, name) {
-			return skill.Install, nil
+			return install, nil
 		}
 	}
 
@@ -571,11 +554,19 @@ func loadRegistryCache() (*Registry, error) {
 	if err := json.Unmarshal(data, &registry); err != nil {
 		return nil, err
 	}
+	if registry.DeprecatedFullPayload && len(registry.Skills) == 0 {
+		return nil, fmt.Errorf("registry cache contains pointer without skills")
+	}
 
+	normalizeRegistrySkills(registry.Skills)
 	return &registry, nil
 }
 
 func saveRegistryCache(registry *Registry) error {
+	if registry.DeprecatedFullPayload && len(registry.Skills) == 0 {
+		return fmt.Errorf("registry cache cannot save pointer without skills")
+	}
+
 	path := config.RegistryCachePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
