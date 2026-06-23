@@ -65,6 +65,16 @@ func RegistryCachePath() string {
 	return filepath.Join(cacheDir, "sk", "registry.json")
 }
 
+// SearchIndexCachePath returns the compact search index cache file path.
+func SearchIndexCachePath() string {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil || cacheDir == "" {
+		homeDir, _ := os.UserHomeDir()
+		cacheDir = filepath.Join(homeDir, ".cache")
+	}
+	return filepath.Join(cacheDir, "sk", "search-index.json")
+}
+
 // Load loads configuration from file
 func Load() *Config {
 	cfg := DefaultConfig()

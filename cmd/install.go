@@ -52,9 +52,7 @@ Supported formats:
 				fmt.Println(styles.RenderError(err.Error()))
 				os.Exit(1)
 			}
-			if regSource == registry.RegistrySourceCache {
-				fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
-			}
+			printRegistrySource(regSource)
 		}
 
 		// Determine skill name

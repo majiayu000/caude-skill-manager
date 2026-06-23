@@ -125,12 +125,13 @@ func showByCategory(category string) {
 		styles.CodeStyle.Render(category),
 	)
 
-	skills, err := registry.GetByCategory(category)
+	skills, source, err := registry.GetByCategoryWithSource(category)
 	if err != nil {
 		fmt.Println(styles.RenderError("Failed to fetch category: " + err.Error()))
 		showAvailableCategories()
 		return
 	}
+	printRegistrySource(source)
 
 	if len(skills) == 0 {
 		fmt.Println(styles.MutedStyle.Render("No skills found in this category."))
@@ -215,10 +216,7 @@ func searchRegistry(keyword string) {
 		fmt.Println(styles.RenderError("Search failed: " + err.Error()))
 		return
 	}
-	if source == registry.RegistrySourceCache {
-		fmt.Println(styles.MutedStyle.Render("Using cached registry data..."))
-		fmt.Println()
-	}
+	printRegistrySource(source)
 
 	if len(skills) == 0 {
 		fmt.Println(styles.MutedStyle.Render("No skills found matching your query."))
@@ -296,6 +294,26 @@ func searchRegistry(keyword string) {
 			len(skills),
 			total,
 		)
+	}
+}
+
+func printRegistrySource(source registry.RegistrySource) {
+	message := registrySourceMessage(source)
+	if message == "" {
+		return
+	}
+	fmt.Println(styles.MutedStyle.Render(message))
+	fmt.Println()
+}
+
+func registrySourceMessage(source registry.RegistrySource) string {
+	switch source {
+	case registry.RegistrySourceRemote:
+		return "Using remote registry data..."
+	case registry.RegistrySourceCache:
+		return "Using cached registry data..."
+	default:
+		return ""
 	}
 }
 
