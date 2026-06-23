@@ -38,9 +38,9 @@ go install github.com/majiayu000/caude-skill-manager@latest
 
 ### Release status
 
-As of 2026-06-06, this repository does not have a published GitHub release yet.
-Use `go install github.com/majiayu000/caude-skill-manager@latest` until a `v*`
-tag has been published and the release assets are visible on GitHub.
+As of 2026-06-17, this repository has Go module tags up to `v0.2.0`, but it
+does not have published GitHub release assets yet. The next release should tag
+the manifest/shard registry support and publish downloadable archives.
 
 After the first release, the expected archive names are:
 
@@ -176,12 +176,13 @@ Config file: `~/.skrc`
 
 Registry cache:
 - Location: `~/.cache/sk/registry.json`
+- Search index cache: `~/.cache/sk/search-index.json`
 - TTL: `registry_ttl_hours` (cache is ignored after expiry)
 
 ## Limitations
 
 - No binary GitHub release is published yet; use the Go install path until the
-  first `v*` release is cut.
+  next tag is cut and GitHub release assets are published.
 - `sk update` is present as a command, but automated updates are not implemented
   yet. For now, reinstall with `sk uninstall <name> && sk install <source>`.
 - Registry-backed search and install depend on the configured registry URL and
@@ -197,6 +198,7 @@ Registry cache:
 
 Release history and launch-readiness notes are tracked in [CHANGELOG.md](CHANGELOG.md).
 The release checklist is documented in [docs/release.md](docs/release.md).
+Registry consumer readiness is tracked in [docs/registry-consumer-spec.md](docs/registry-consumer-spec.md).
 
 ## Built With
 
