@@ -27,7 +27,8 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Os }}_
@@ -36,7 +37,8 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
@@ -83,18 +85,14 @@ release:
 
     **Full Changelog**: https://github.com/majiayu000/caude-skill-manager/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-brews:
+homebrew_casks:
   - name: sk
     repository:
       owner: majiayu000
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    folder: Formula
+    binaries:
+      - sk
     homepage: "https://github.com/majiayu000/caude-skill-manager"
     description: "Claude Skills Manager - npm for Claude Code Skills"
     license: "MIT"
-    skip_upload: auto
-    test: |
-      system "#{bin}/sk", "--help"
-    install: |
-      bin.install "sk"
+    skip_upload: true
