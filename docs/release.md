@@ -34,8 +34,18 @@ asset-backed release is published.
    ```bash
    sk --help
    sk doctor
+   sk doctor --registry
    HOME=/tmp/sk-home-release-check sk search testing
    ```
+
+For source-tree verification before a tag, run the cold-cache registry smoke
+script. It builds `sk`, uses a temporary `HOME` and `XDG_CACHE_HOME`, runs
+search/category/install-by-name flows, and leaves the user's real skill
+directory untouched:
+
+```bash
+bash scripts/smoke-registry.sh
+```
 
 ## Release blockers before advertising binary installs
 

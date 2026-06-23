@@ -489,24 +489,30 @@ func SearchWithSource(keyword string) ([]Skill, RegistrySource, error) {
 
 // GetByCategory returns skills in a category
 func GetByCategory(category string) ([]Skill, error) {
-	cat, err := FetchCategory(category)
-	if err != nil {
-		// Fallback to filtering from full registry
-		registry, err := FetchRegistry()
-		if err != nil {
-			return nil, err
-		}
+	skills, _, err := GetByCategoryWithSource(category)
+	return skills, err
+}
 
-		var results []Skill
-		for _, skill := range registry.Skills {
-			if strings.EqualFold(skill.Category, category) {
-				results = append(results, skill)
-			}
-		}
-		return dedupeSkills(results), nil
+// GetByCategoryWithSource returns skills in a category and indicates data source.
+func GetByCategoryWithSource(category string) ([]Skill, RegistrySource, error) {
+	cat, err := FetchCategory(category)
+	if err == nil {
+		return dedupeSkills(cat.Skills), RegistrySourceRemote, nil
 	}
 
-	return dedupeSkills(cat.Skills), nil
+	// Fallback to filtering from full registry.
+	registry, source, err := FetchRegistryWithSource()
+	if err != nil {
+		return nil, "", err
+	}
+
+	var results []Skill
+	for _, skill := range registry.Skills {
+		if strings.EqualFold(skill.Category, category) {
+			results = append(results, skill)
+		}
+	}
+	return dedupeSkills(results), source, nil
 }
 
 // ResolveInstall finds a skill by name and returns its install string.
@@ -581,12 +587,7 @@ func saveRegistryCache(registry *Registry) error {
 }
 
 func searchIndexCachePath() string {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil || cacheDir == "" {
-		homeDir, _ := os.UserHomeDir()
-		cacheDir = filepath.Join(homeDir, ".cache")
-	}
-	return filepath.Join(cacheDir, "sk", "search-index.json")
+	return config.SearchIndexCachePath()
 }
 
 func loadSearchIndexCache() (*SearchIndex, error) {

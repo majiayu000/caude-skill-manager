@@ -84,6 +84,7 @@ sk uninstall my-skill
 
 # Check health
 sk doctor
+sk doctor --registry
 
 # Update skills
 sk update            # Planned; currently prints manual reinstall guidance
@@ -178,6 +179,12 @@ Registry cache:
 - Location: `~/.cache/sk/registry.json`
 - Search index cache: `~/.cache/sk/search-index.json`
 - TTL: `registry_ttl_hours` (cache is ignored after expiry)
+
+Registry verification:
+
+```bash
+bash scripts/smoke-registry.sh
+```
 
 ## Limitations
 

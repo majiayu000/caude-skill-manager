@@ -214,9 +214,12 @@ func TestGetByCategoryFallbackUsesFullRegistryManifest(t *testing.T) {
 	defer server.Close()
 	writeConfigForRegistryTest(t, server.URL)
 
-	skills, err := GetByCategory("testing")
+	skills, source, err := GetByCategoryWithSource("testing")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if source != RegistrySourceRemote {
+		t.Fatalf("expected remote source, got %s", source)
 	}
 	if len(skills) != 1 {
 		t.Fatalf("expected one fallback skill, got %d", len(skills))
