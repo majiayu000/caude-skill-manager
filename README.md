@@ -33,16 +33,15 @@
 # Using Go
 go install github.com/majiayu000/caude-skill-manager@latest
 
-# Binary archives will be available after the first tagged GitHub release.
+# Or download a binary archive from the latest GitHub release.
 ```
 
 ### Release status
 
-As of 2026-06-17, this repository has Go module tags up to `v0.2.0`, but it
-does not have published GitHub release assets yet. The next release should tag
-the manifest/shard registry support and publish downloadable archives.
+`v0.3.0` is the first asset-backed release for manifest/shard registry support.
+Use Go install or download a release archive from GitHub.
 
-After the first release, the expected archive names are:
+The expected archive names are:
 
 ```bash
 # macOS (Apple Silicon)
@@ -188,8 +187,6 @@ bash scripts/smoke-registry.sh
 
 ## Limitations
 
-- No binary GitHub release is published yet; use the Go install path until the
-  next tag is cut and GitHub release assets are published.
 - `sk update` is present as a command, but automated updates are not implemented
   yet. For now, reinstall with `sk uninstall <name> && sk install <source>`.
 - Registry-backed search and install depend on the configured registry URL and
