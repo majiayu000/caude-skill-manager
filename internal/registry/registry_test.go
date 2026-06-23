@@ -50,6 +50,48 @@ func TestFetchRegistryFollowsManifestShards(t *testing.T) {
 	}
 }
 
+func TestFetchRegistryFallsBackToPlainShardWhenGzipFails(t *testing.T) {
+	var gzipRequested bool
+	var plainRequested bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/registry.json", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, `{"deprecated_full_payload":true,"manifest":"registry-manifest.json","total_count":1}`)
+	})
+	mux.HandleFunc("/registry-manifest.json", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, `{"total_count":1,"shards":[{"gzip_path":"registry-shards/00.json.gz","path":"registry-shards/00.json","count":1}]}`)
+	})
+	mux.HandleFunc("/registry-shards/00.json.gz", func(w http.ResponseWriter, r *http.Request) {
+		gzipRequested = true
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write([]byte("not gzip"))
+	})
+	mux.HandleFunc("/registry-shards/00.json", func(w http.ResponseWriter, r *http.Request) {
+		plainRequested = true
+		writeJSON(t, w, `{"count":1,"skills":[{"name":"plain-fallback","description":"plain shard","repo":"owner/repo","path":".claude/skills/plain-fallback/SKILL.md","category":"testing"}]}`)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	registry, err := fetchRegistryFromBaseURL(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gzipRequested {
+		t.Fatal("expected gzip shard to be tried first")
+	}
+	if !plainRequested {
+		t.Fatal("expected plain shard fallback after gzip failure")
+	}
+	if len(registry.Skills) != 1 {
+		t.Fatalf("expected one skill, got %d", len(registry.Skills))
+	}
+	if got := registry.Skills[0].Name; got != "plain-fallback" {
+		t.Fatalf("unexpected fallback skill: %s", got)
+	}
+}
+
 func TestFetchRegistryPointerWithoutManifestFails(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/registry.json", func(w http.ResponseWriter, r *http.Request) {

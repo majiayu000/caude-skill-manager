@@ -83,17 +83,20 @@ func fetchRegistryFromManifest(baseURL, manifestPath string, pointer *Registry) 
 	}
 
 	for _, shard := range manifest.Shards {
-		shardPath := shard.GzipPath
-		if shardPath == "" {
-			shardPath = shard.Path
-		}
-		if shardPath == "" {
+		shardPaths := registryShardPaths(shard)
+		if len(shardPaths) == 0 {
 			return nil, fmt.Errorf("registry manifest contains empty shard path")
 		}
 
 		var payload registryShard
-		if err := fetchJSON(artifactURL(baseURL, shardPath), &payload); err != nil {
-			return nil, fmt.Errorf("failed to fetch registry shard %s: %w", shardPath, err)
+		for i, shardPath := range shardPaths {
+			if err := fetchJSON(artifactURL(baseURL, shardPath), &payload); err != nil {
+				if i == len(shardPaths)-1 {
+					return nil, fmt.Errorf("failed to fetch registry shard %s: %w", shardPath, err)
+				}
+				continue
+			}
+			break
 		}
 		for i := range payload.Skills {
 			normalizeRegistrySkill(&payload.Skills[i])
@@ -105,6 +108,17 @@ func fetchRegistryFromManifest(baseURL, manifestPath string, pointer *Registry) 
 		registry.TotalCount = len(registry.Skills)
 	}
 	return registry, nil
+}
+
+func registryShardPaths(shard artifactPart) []string {
+	var paths []string
+	if shard.GzipPath != "" {
+		paths = append(paths, shard.GzipPath)
+	}
+	if shard.Path != "" && shard.Path != shard.GzipPath {
+		paths = append(paths, shard.Path)
+	}
+	return paths
 }
 
 func normalizeRegistrySkill(skill *Skill) {
